@@ -1,0 +1,6 @@
+import{describe,expect,it}from'vitest';import{sampleData}from'../src/data/sampleData';import{chartReducer}from'../src/state/chartReducer'
+describe('V2 reducer',()=>{
+ it('moves a crew manager between operations managers',()=>{const s=structuredClone(sampleData),cm=s.operationsManagers[0].crewManagers[0];const n=chartReducer(s,{type:'moveCrewManager',fromOperationsManagerId:s.operationsManagers[0].id,toOperationsManagerId:s.operationsManagers[1].id,id:cm.id});expect(n.operationsManagers[0].crewManagers.some(x=>x.id===cm.id)).toBe(false);expect(n.operationsManagers[1].crewManagers.some(x=>x.id===cm.id)).toBe(true)})
+ it('clears an assistant assignment outside the selected crew manager',()=>{const s=structuredClone(sampleData),v={...s.vessels[0],crewManagerId:'manager-3',assignedAssistantId:'assistant-1'};const n=chartReducer(s,{type:'updateVessel',value:v});expect(n.vessels[0].assignedAssistantId).toBe('')})
+ it('syncs team vessel IDs when reassigned',()=>{const s=structuredClone(sampleData),v={...s.vessels[0],crewManagerId:'manager-3',assignedAssistantId:''};const n=chartReducer(s,{type:'updateVessel',value:v});expect(n.operationsManagers[0].crewManagers[0].vesselIds).not.toContain(v.id);expect(n.operationsManagers[1].crewManagers[0].vesselIds).toContain(v.id)})
+})

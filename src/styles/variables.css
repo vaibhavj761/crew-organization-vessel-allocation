@@ -1,0 +1,20 @@
+:root {
+  --navy-950: #071a2e;
+  --navy-900: #0b2447;
+  --navy-800: #102f4f;
+  --navy-700: #24465f;
+  --steel-600: #3d7396;
+  --steel-500: #4e83a6;
+  --steel-100: #eaf1f5;
+  --ink: #172b3f;
+  --muted: #667b8d;
+  --line: #d5dee5;
+  --line-soft: #e7ecef;
+  --surface: #ffffff;
+  --surface-alt: #f7f9fb;
+  --workspace: #e9eef2;
+  --danger: #b42318;
+  --shadow-sm: 0 2px 8px rgba(11, 36, 71, 0.08);
+  --shadow-md: 0 12px 30px rgba(11, 36, 71, 0.13);
+  --radius: 8px;
+}

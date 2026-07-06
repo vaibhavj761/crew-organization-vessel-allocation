@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+  BOSS_VIEWER
+}
+
+enum UserStatus {
+  PENDING_APPROVAL
+  APPROVED_NEEDS_PASSWORD
+  ACTIVE
+  REJECTED
+  DISABLED
+}
+
+enum PasswordTokenType {
+  SET_PASSWORD
+  RESET_PASSWORD
+}
+
+enum WorkflowRole {
+  CREW_DIRECTOR
+  OPERATIONS_MANAGER
+  CREW_MANAGER
+  ASSISTANT
+}
+
+enum VesselStatus {
+  IN_MANAGEMENT
+  UPCOMING
+  OUT_OF_MANAGEMENT
+}
+
+enum ManagementType {
+  FULL_MANAGED
+  CREW_MANAGED
+}
+
+model User {
+  id                   String          @id @default(cuid())
+  name                 String
+  email                String          @unique
+  passwordHash         String?
+  role                 Role            @default(VIEWER)
+  status               UserStatus      @default(PENDING_APPROVAL)
+  isActive             Boolean         @default(true)
+  department           String?
+  accessRequestMessage String?
+  approvedByUserId     String?
+  approvedAt           DateTime?
+  rejectedAt           DateTime?
+  lastLoginAt          DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  passwordTokens       PasswordToken[]
+}
+
+model PasswordToken {
+  id        String            @id @default(cuid())
+  userId    String
+  tokenHash String
+  type      PasswordTokenType
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime          @default(now())
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([tokenHash])
+}
+
+model Organization {
+  id            String   @id @default(cuid())
+  name          String
+  title         String
+  effectiveDate  DateTime?
+  footerText    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  people               Person[]
+  operationsManagers    OperationsManager[]
+  crewManagers          CrewManager[]
+  assistants            Assistant[]
+  vessels               Vessel[]
+}
+
+model Person {
+  id            String        @id @default(cuid())
+  organizationId String
+  name          String
+  designation   String
+  workflowRole  WorkflowRole
+  email         String?
+  phone         String?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  operationsManager OperationsManager?
+  crewManager CrewManager?
+  assistant Assistant?
+
+  @@index([organizationId, workflowRole])
+}
+
+model OperationsManager {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  personId           String   @unique
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  crewManagers CrewManager[]
+
+  @@index([organizationId, sortOrder])
+}
+
+model CrewManager {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  operationsManagerId String
+  personId            String   @unique
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  operationsManager OperationsManager @relation(fields: [operationsManagerId], references: [id], onDelete: Restrict)
+  person            Person            @relation(fields: [personId], references: [id], onDelete: Cascade)
+  assistants        Assistant[]
+  vesselAllocations VesselAllocation[]
+
+  @@index([organizationId, operationsManagerId, sortOrder])
+}
+
+model Assistant {
+  id             String   @id @default(cuid())
+  organizationId String
+  crewManagerId  String
+  personId       String   @unique
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  crewManager  CrewManager  @relation(fields: [crewManagerId], references: [id], onDelete: Restrict)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  vesselAllocations VesselAllocation[]
+
+  @@index([organizationId, crewManagerId, sortOrder])
+}
+
+model Vessel {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  name                 String
+  vesselType           String?
+  vesselDoc            String?
+  deadweightTonnage    String?
+  ownerPool            String?
+  ownerName            String?
+  marineSuperintendent String?
+  vesselManager        String?
+  takeoverDate         DateTime?
+  handoverDate         DateTime?
+  vesselStatus         VesselStatus
+  managementType       ManagementType
+  notes                String?
+  sortOrder            Int            @default(0)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vesselAllocations VesselAllocation[]
+
+  @@index([organizationId, sortOrder])
+  @@index([organizationId, vesselStatus, managementType])
+}
+
+model VesselAllocation {
+  id                   String   @id @default(cuid())
+  vesselId             String   @unique
+  crewManagerId        String
+  assignedAssistantId  String?
+  allocatedAt          DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  vessel           Vessel        @relation(fields: [vesselId], references: [id], onDelete: Cascade)
+  crewManager      CrewManager    @relation(fields: [crewManagerId], references: [id], onDelete: Restrict)
+  assignedAssistant Assistant?    @relation(fields: [assignedAssistantId], references: [id], onDelete: SetNull)
+
+  @@index([crewManagerId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  beforeJson  Json?
+  afterJson   Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+}

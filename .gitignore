@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+coverage/
+
+# Environment files - never commit secrets
+.env
+.env.local
+.env.*.local
+server/.env
+
+# Build/cache files
+dist/
+server/dist/
+node_modules/
+server/node_modules/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# OS/editor files
+.DS_Store

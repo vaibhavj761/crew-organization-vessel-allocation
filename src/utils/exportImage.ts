@@ -1,0 +1,5 @@
+import type{ChartData,ViewMode}from'../types';import{generateChartSvg}from'./exportSvg'
+const dl=(b:Blob,n:string)=>{const u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(u),500)}
+const name=(m:ViewMode,e:string)=>`crew-${m}-${new Date().toISOString().slice(0,10)}.${e}`
+export function exportSvg(d:ChartData,m:ViewMode,op=''){dl(new Blob([generateChartSvg(d,m,op)],{type:'image/svg+xml'}),name(m,'svg'))}
+export async function exportPng(d:ChartData,m:ViewMode,op=''){const u=URL.createObjectURL(new Blob([generateChartSvg(d,m,op)],{type:'image/svg+xml'}));try{const i=new Image();await new Promise<void>((r,j)=>{i.onload=()=>r();i.onerror=j;i.src=u});const c=document.createElement('canvas');c.width=3200;c.height=1800;const x=c.getContext('2d')!;x.fillStyle='#f7f9fb';x.fillRect(0,0,3200,1800);x.drawImage(i,0,0,3200,1800);const b=await new Promise<Blob|null>(r=>c.toBlob(r,'image/png'));if(b)dl(b,name(m,'png'))}finally{URL.revokeObjectURL(u)}}

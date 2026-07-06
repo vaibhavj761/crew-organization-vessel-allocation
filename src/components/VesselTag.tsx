@@ -1,0 +1,3 @@
+import type{Assistant,Vessel}from'../types'
+const label=(s:string)=>s.replaceAll('_',' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase())
+export function VesselTag({vessel,assistants,detailed=false}:{vessel:Vessel;assistants:Assistant[];detailed?:boolean}){const a=assistants.find(x=>x.id===vessel.assignedAssistantId);return <div className="vessel-tag"><span className="vessel-marker"/><span className="vessel-main"><strong>{vessel.name||'Unnamed vessel'}</strong><small>{detailed?[vessel.vesselType,vessel.vesselDoc,vessel.ownerPool].filter(Boolean).join(' • '):vessel.vesselType||'Vessel'}</small>{a&&<em>Support: {a.name}</em>}</span><span className="vessel-badges"><i>{label(vessel.vesselStatus)}</i>{detailed&&<i>{label(vessel.managementType)}</i>}</span></div>}
