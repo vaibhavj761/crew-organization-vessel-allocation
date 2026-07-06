@@ -5,11 +5,6 @@ export type OrganizationPayload = {
   title: string
   effectiveDate?: string | null
   footerText?: string | null
-  crewDirectorName?: string
-  crewDirectorDesignation?: string
-  crewDirectorEmail?: string
-  crewDirectorPhone?: string
-  crewDirectorNotes?: string
 }
 
 export const organizationApi = {

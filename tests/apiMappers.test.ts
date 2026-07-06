@@ -9,20 +9,25 @@ import {
 describe('api mappers', () => {
   it('maps operations managers with nested crew managers and preserves backend team ids', () => {
     const mapped = mapHierarchyResponseToChartState({
-      crewDirector: { id: 'director-9', name: 'Asha', designation: 'Crew Director', email: 'asha@example.com' },
-      operationsManagers: [{
-        id: 'ops-1',
-        person: { id: 'person-1', name: 'Marcus', designation: 'Crew Operations Manager', email: 'ops@example.com' },
-        crewManagers: [{
-          id: 'crew-node-1',
-          person: { id: 'person-2', name: 'Leena', designation: 'Crew Manager', email: 'leena@example.com' },
-          assistants: [],
-          vessels: [{ id: 'vessel-a' }],
+      crewDirectors: [{
+        id: 'director-9',
+        person: { id: 'director-person-9', name: 'Asha', designation: 'Crew Director', email: 'asha@example.com' },
+        operationsManagers: [{
+          id: 'ops-1',
+          person: { id: 'person-1', name: 'Marcus', designation: 'Crew Operations Manager', email: 'ops@example.com' },
+          crewManagers: [{
+            id: 'crew-node-1',
+            person: { id: 'person-2', name: 'Leena', designation: 'Crew Manager', email: 'leena@example.com' },
+            assistants: [],
+            vessels: [{ id: 'vessel-a' }],
+          }],
         }],
       }],
     })
 
+    expect(mapped.crewDirectors[0].id).toBe('director-9')
     expect(mapped.operationsManagers[0].id).toBe('ops-1')
+    expect(mapped.operationsManagers[0].crewDirectorId).toBe('director-9')
     expect(mapped.operationsManagers[0].crewManagers[0].id).toBe('crew-node-1')
     expect(mapped.operationsManagers[0].crewManagers[0].person.id).toBe('person-2')
     expect(mapped.operationsManagers[0].crewManagers[0].vesselIds).toEqual(['vessel-a'])
@@ -30,15 +35,18 @@ describe('api mappers', () => {
 
   it('maps assistants into compact team members', () => {
     const mapped = mapHierarchyResponseToChartState({
-      crewDirector: { name: 'Director' },
-      operationsManagers: [{
-        id: 'ops-1',
-        person: { id: 'person-1', name: 'Ops', designation: 'Ops' },
-        crewManagers: [{
-          id: 'crew-node-1',
-          person: { id: 'person-2', name: 'Crew', designation: 'Crew' },
-          assistants: [{ id: 'assistant-node-1', person: { id: 'assistant-person-1', name: 'Noor', designation: 'Assistant Crew Manager' } }],
-          vessels: [],
+      crewDirectors: [{
+        id: 'director-1',
+        person: { name: 'Director' },
+        operationsManagers: [{
+          id: 'ops-1',
+          person: { id: 'person-1', name: 'Ops', designation: 'Ops' },
+          crewManagers: [{
+            id: 'crew-node-1',
+            person: { id: 'person-2', name: 'Crew', designation: 'Crew' },
+            assistants: [{ id: 'assistant-node-1', person: { id: 'assistant-person-1', name: 'Noor', designation: 'Assistant Crew Manager' } }],
+            vessels: [],
+          }],
         }],
       }],
     })
@@ -72,15 +80,18 @@ describe('api mappers', () => {
 
   it('keeps backend crew-manager id separate from person id', () => {
     const mapped = mapHierarchyResponseToChartState({
-      crewDirector: { name: 'Director' },
-      operationsManagers: [{
-        id: 'ops-node-1',
-        person: { id: 'person-ops-1', name: 'Ops', designation: 'Crew Operations Manager' },
-        crewManagers: [{
-          id: 'crew-node-99',
-          person: { id: 'person-cm-7', name: 'Crew', designation: 'Crew Manager' },
-          assistants: [],
-          vessels: [],
+      crewDirectors: [{
+        id: 'director-1',
+        person: { name: 'Director' },
+        operationsManagers: [{
+          id: 'ops-node-1',
+          person: { id: 'person-ops-1', name: 'Ops', designation: 'Crew Operations Manager' },
+          crewManagers: [{
+            id: 'crew-node-99',
+            person: { id: 'person-cm-7', name: 'Crew', designation: 'Crew Manager' },
+            assistants: [],
+            vessels: [],
+          }],
         }],
       }],
     })

@@ -1,14 +1,23 @@
 import { apiClient } from './client'
-import type { Assistant, Person } from '../types'
+import type { Assistant, CrewDirectorNode, Person } from '../types'
 
 export const hierarchyApi = {
   getHierarchy() {
     return apiClient.request('/api/hierarchy')
   },
-  createOperationsManager(payload: Person & { sortOrder?: number }) {
+  createCrewDirector(payload: CrewDirectorNode['person'] & { organizationId: string; sortOrder?: number }) {
+    return apiClient.request('/api/crew-directors', { method: 'POST', body: JSON.stringify(payload) })
+  },
+  updateCrewDirector(id: string, payload: Partial<CrewDirectorNode['person']> & { sortOrder?: number }) {
+    return apiClient.request(`/api/crew-directors/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+  deleteCrewDirector(id: string) {
+    return apiClient.request(`/api/crew-directors/${id}`, { method: 'DELETE' })
+  },
+  createOperationsManager(payload: Person & { crewDirectorId: string; sortOrder?: number }) {
     return apiClient.request('/api/operations-managers', { method: 'POST', body: JSON.stringify(payload) })
   },
-  updateOperationsManager(id: string, payload: Partial<Person> & { sortOrder?: number }) {
+  updateOperationsManager(id: string, payload: Partial<Person> & { crewDirectorId?: string; sortOrder?: number }) {
     return apiClient.request(`/api/operations-managers/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
   },
   deleteOperationsManager(id: string) {

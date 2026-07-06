@@ -8,12 +8,18 @@ export interface Person {
   email: string; phone: string; notes: string
 }
 export interface Assistant extends Person { workflowRole: 'ASSISTANT'; sortOrder: number }
+export interface CrewDirectorNode {
+  id: string
+  sortOrder: number
+  person: Person & { workflowRole: 'CREW_DIRECTOR' }
+}
 export interface CrewManagerNode {
   id: string; sortOrder: number; person: Person & { workflowRole: 'CREW_MANAGER' }
   assistants: Assistant[]; vesselIds: string[]
 }
 export interface OperationsManagerNode {
   id: string; sortOrder: number; person: Person & { workflowRole: 'OPERATIONS_MANAGER' }
+  crewDirectorId: string
   crewManagers: CrewManagerNode[]
 }
 export interface Vessel {
@@ -24,7 +30,7 @@ export interface Vessel {
 }
 export interface ChartData {
   schemaVersion: 2; title: string; organizationName: string; effectiveDate: string
-  crewDirector: Person & { workflowRole: 'CREW_DIRECTOR' }
+  crewDirectors: CrewDirectorNode[]
   operationsManagers: OperationsManagerNode[]; vessels: Vessel[]; footerText: string
 }
 

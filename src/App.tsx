@@ -7,6 +7,7 @@ import type { SafeUser, ViewMode } from './types'
 import { RequestAccessPage } from './components/RequestAccessPage'
 import { ForgotPasswordPage } from './components/ForgotPasswordPage'
 import { SetPasswordPage } from './components/SetPasswordPage'
+import { ChartProvider } from './state/ChartContext'
 
 const publicRoutes = new Set(['/request-access', '/forgot-password', '/set-password', '/reset-password'])
 
@@ -94,24 +95,26 @@ export default function App() {
   const canAdmin = user.role === 'ADMIN'
 
   return (
-    <AppShell
-      viewMode={viewMode}
-      onViewModeChange={(nextView) => {
-        const pathByView: Record<ViewMode, string> = {
-          dashboard: '/',
-          overview: '/organization',
-          detail: '/operations-detail',
-          allocation: '/vessel-allocation',
-          vessels: '/vessel-master',
-          access: '/admin/access',
-        }
-        navigate(pathByView[nextView] || '/')
-      }}
-      user={user}
-      canEdit={canEdit}
-      canAdmin={canAdmin}
-      onRefresh={loadMe}
-      onLogout={() => { setUser(null); navigate('/', true) }}
-    />
+    <ChartProvider key={user.id}>
+      <AppShell
+        viewMode={viewMode}
+        onViewModeChange={(nextView) => {
+          const pathByView: Record<ViewMode, string> = {
+            dashboard: '/',
+            overview: '/organization',
+            detail: '/operations-detail',
+            allocation: '/vessel-allocation',
+            vessels: '/vessel-master',
+            access: '/admin/access',
+          }
+          navigate(pathByView[nextView] || '/')
+        }}
+        user={user}
+        canEdit={canEdit}
+        canAdmin={canAdmin}
+        onRefresh={loadMe}
+        onLogout={() => { setUser(null); navigate('/', true) }}
+      />
+    </ChartProvider>
   )
 }

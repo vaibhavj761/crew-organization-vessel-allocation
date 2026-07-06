@@ -1,5 +1,4 @@
 import { createContext, type Dispatch, type ReactNode, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { sampleData } from '../data/sampleData'
 import type { ChartData } from '../types'
 import { chartReducer, type ChartAction } from './chartReducer'
 import { hierarchyApi } from '../api/hierarchy'
@@ -16,6 +15,7 @@ import {
   mapVesselResponseListToChartVessels,
   mapVesselToApiPayload,
 } from './apiMappers'
+import { createEmptyChartData } from '../utils/createEmptyChartData'
 
 type LoadState = 'loading' | 'ready' | 'error'
 type SaveState = 'saved' | 'saving' | 'error'
@@ -34,7 +34,7 @@ interface ChartContextValue {
 const ChartContext = createContext<ChartContextValue | null>(null)
 
 function initialData(): ChartData {
-  return structuredClone(sampleData)
+  return createEmptyChartData()
 }
 
 function equalJson(a: unknown, b: unknown) {
@@ -64,14 +64,25 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     setErrorMessage('')
     try {
       const organizationResponse = await organizationApi.getOrganization() as Parameters<typeof mapOrganizationResponseToChartState>[0]
-      const hierarchyResponse = await hierarchyApi.getHierarchy() as Parameters<typeof mapHierarchyResponseToChartState>[0]
-      const vesselResponse = await vesselsApi.getVessels() as Parameters<typeof mapVesselResponseListToChartVessels>[0]
+      organizationIdRef.current = (organizationResponse as { organization?: { id?: string } })?.organization?.id || ''
+      if (!organizationIdRef.current) {
+        const emptyState = createEmptyChartData()
+        snapshotRef.current = emptyState
+        dispatch({ type: 'replace', data: emptyState })
+        setLoadState('ready')
+        setSaveState('saved')
+        return
+      }
+
+      const [hierarchyResponse, vesselResponse] = await Promise.all([
+        hierarchyApi.getHierarchy() as Promise<Parameters<typeof mapHierarchyResponseToChartState>[0]>,
+        vesselsApi.getVessels() as Promise<Parameters<typeof mapVesselResponseListToChartVessels>[0]>,
+      ])
 
       const organization = mapOrganizationResponseToChartState(organizationResponse)
       const hierarchy = mapHierarchyResponseToChartState(hierarchyResponse)
       const vessels = mapVesselResponseListToChartVessels(vesselResponse)
 
-      organizationIdRef.current = (organizationResponse as { organization?: { id?: string } })?.organization?.id || ''
       const chartData: ChartData = {
         schemaVersion: 2,
         ...organization,
@@ -103,14 +114,12 @@ export function ChartProvider({ children }: { children: ReactNode }) {
           organizationName: workingCopy.organizationName,
           effectiveDate: workingCopy.effectiveDate,
           footerText: workingCopy.footerText,
-          crewDirector: workingCopy.crewDirector,
         },
         {
           title: snapshot.title,
           organizationName: snapshot.organizationName,
           effectiveDate: snapshot.effectiveDate,
           footerText: snapshot.footerText,
-          crewDirector: snapshot.crewDirector,
         },
       )) {
         const response = await organizationApi.updateOrganization({
@@ -118,17 +127,12 @@ export function ChartProvider({ children }: { children: ReactNode }) {
           title: workingCopy.title,
           effectiveDate: toApiDateTime(workingCopy.effectiveDate),
           footerText: workingCopy.footerText || null,
-          crewDirectorName: workingCopy.crewDirector.name,
-          crewDirectorDesignation: workingCopy.crewDirector.designation,
-          crewDirectorEmail: workingCopy.crewDirector.email || '',
-          crewDirectorPhone: workingCopy.crewDirector.phone || '',
-          crewDirectorNotes: workingCopy.crewDirector.notes || '',
         }) as { organization?: { id?: string } }
         organizationId = response.organization?.id || organizationId
         organizationIdRef.current = organizationId
       }
 
-      const needsOrganization = workingCopy.operationsManagers.length > 0 || workingCopy.vessels.length > 0
+      const needsOrganization = workingCopy.crewDirectors.length > 0 || workingCopy.operationsManagers.length > 0 || workingCopy.vessels.length > 0
       if (!organizationId) {
         if (needsOrganization) {
           throw new Error('Organization must be created before adding hierarchy or vessels.')
@@ -139,15 +143,31 @@ export function ChartProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      const snapshotDirectors = new Map((snapshot?.crewDirectors || []).map((director) => [director.id, director]))
+      const currentDirectors = workingCopy.crewDirectors
+      for (const director of currentDirectors) {
+        if (!snapshotDirectors.has(director.id)) {
+          const created = await hierarchyApi.createCrewDirector({ organizationId, ...director.person, sortOrder: director.sortOrder } as never) as { id?: string; person?: { id?: string } }
+          const previousDirectorId = director.id
+          director.id = created.id || director.id
+          director.person.id = created.person?.id || director.person.id
+          workingCopy.operationsManagers.forEach((op) => {
+            if (op.crewDirectorId === previousDirectorId) op.crewDirectorId = director.id
+          })
+        } else if (!equalJson({ person: director.person, sortOrder: director.sortOrder }, { person: snapshotDirectors.get(director.id)?.person, sortOrder: snapshotDirectors.get(director.id)?.sortOrder })) {
+          await hierarchyApi.updateCrewDirector(director.id, { ...director.person, sortOrder: director.sortOrder } as never)
+        }
+      }
+
       const currentOps = workingCopy.operationsManagers
       const snapshotOps = new Map((snapshot?.operationsManagers || []).map((op) => [op.id, op]))
       for (const op of currentOps) {
         if (!snapshotOps.has(op.id)) {
-          const created = await hierarchyApi.createOperationsManager({ organizationId, ...mapOperationsManagerToApiPayload(op) } as never) as { id?: string; person?: { id?: string } }
+          const created = await hierarchyApi.createOperationsManager({ organizationId, ...mapOperationsManagerToApiPayload(op), crewDirectorId: op.crewDirectorId } as never) as { id?: string; person?: { id?: string } }
           op.id = created.id || op.id
           op.person.id = created.person?.id || op.person.id
-        } else if (!equalJson({ person: op.person, sortOrder: op.sortOrder }, { person: snapshotOps.get(op.id)?.person, sortOrder: snapshotOps.get(op.id)?.sortOrder })) {
-          await hierarchyApi.updateOperationsManager(op.id, mapOperationsManagerToApiPayload(op) as never)
+        } else if (!equalJson({ person: op.person, sortOrder: op.sortOrder, crewDirectorId: op.crewDirectorId }, { person: snapshotOps.get(op.id)?.person, sortOrder: snapshotOps.get(op.id)?.sortOrder, crewDirectorId: snapshotOps.get(op.id)?.crewDirectorId })) {
+          await hierarchyApi.updateOperationsManager(op.id, { ...mapOperationsManagerToApiPayload(op), crewDirectorId: op.crewDirectorId } as never)
         }
       }
 
@@ -237,6 +257,11 @@ export function ChartProvider({ children }: { children: ReactNode }) {
         if (!currentOpsMap.has(op.id)) await hierarchyApi.deleteOperationsManager(op.id)
       }
 
+      const currentDirectorMap = new Map(currentDirectors.map((director) => [director.id, director]))
+      for (const director of snapshot?.crewDirectors || []) {
+        if (!currentDirectorMap.has(director.id)) await hierarchyApi.deleteCrewDirector(director.id)
+      }
+
       snapshotRef.current = workingCopy
       setSaveState('saved')
       await loadFromServer()
@@ -251,6 +276,21 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   }, [loadFromServer])
 
   const hasUnsavedChanges = useMemo(() => !(snapshotRef.current && equalJson(snapshotRef.current, data)), [data])
+
+  useEffect(() => {
+    const refreshIfClean = () => {
+      if (!syncingRef.current && !hasUnsavedChanges) void loadFromServer()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshIfClean()
+    }
+    window.addEventListener('focus', refreshIfClean)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('focus', refreshIfClean)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [hasUnsavedChanges, loadFromServer])
 
   const saveChanges = useCallback(async () => {
     if (loadState !== 'ready' || syncingRef.current) return

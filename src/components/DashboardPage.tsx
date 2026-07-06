@@ -17,6 +17,7 @@ export function DashboardPage() {
 
       <div className="admin-summary-grid dashboard-summary-grid">
         <div className="admin-summary-card"><span><Building2 size={16} /></span><strong>{data.organizationName || 'Organization'}</strong><small>{data.title}</small></div>
+        <div className="admin-summary-card"><span><UserCog size={16} /></span><strong>{data.crewDirectors.length}</strong><small>Crew directors</small></div>
         <div className="admin-summary-card"><span><UserCog size={16} /></span><strong>{data.operationsManagers.length}</strong><small>Operations managers</small></div>
         <div className="admin-summary-card"><span><Users size={16} /></span><strong>{crewManagers.length}</strong><small>Crew managers · {assistants.length} assistants</small></div>
         <div className="admin-summary-card"><span><Ship size={16} /></span><strong>{data.vessels.length}</strong><small>Vessels in planner</small></div>

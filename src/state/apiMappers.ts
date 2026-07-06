@@ -1,11 +1,12 @@
-import type { Assistant, ChartData, CrewManagerNode, OperationsManagerNode, Person, Vessel } from '../types'
+import type { Assistant, ChartData, CrewDirectorNode, CrewManagerNode, OperationsManagerNode, Person, Vessel } from '../types'
 
 type NullableString = string | null | undefined
 type RawPerson = Partial<Person> & { id?: string }
 type RawAssistant = { id?: string; person?: RawPerson }
 type RawCrewManager = { id?: string; person?: RawPerson; assistants?: RawAssistant[]; vessels?: Array<{ id?: string }> }
-type RawOperationsManager = { id?: string; person?: RawPerson; crewManagers?: RawCrewManager[] }
-type RawHierarchyResponse = { crewDirector?: RawPerson; operationsManagers?: RawOperationsManager[] } | null | undefined
+type RawOperationsManager = { id?: string; crewDirectorId?: string; person?: RawPerson; crewManagers?: RawCrewManager[] }
+type RawCrewDirector = { id?: string; person?: RawPerson; operationsManagers?: RawOperationsManager[] }
+type RawHierarchyResponse = { crewDirectors?: RawCrewDirector[] } | null | undefined
 type RawVesselAllocation = { crewManagerId?: string; assignedAssistantId?: string | null }
 type RawVessel = {
   id?: string
@@ -58,17 +59,29 @@ function mapCrewManager(raw: RawCrewManager, sortOrder: number): CrewManagerNode
 function mapOperationsManager(raw: RawOperationsManager, sortOrder: number): OperationsManagerNode {
   return {
     id: raw?.id || `operations-manager-${sortOrder}`,
+    crewDirectorId: raw?.crewDirectorId || '',
     sortOrder,
     person: mapPerson(raw?.person, 'OPERATIONS_MANAGER', raw?.person?.id || raw?.id || `operations-manager-${sortOrder}`, raw?.person?.name || 'New Operations Manager', raw?.person?.designation || 'Crew Operations Manager'),
     crewManagers: (raw.crewManagers || []).map((crewManager, index) => mapCrewManager(crewManager, index + 1)),
   }
 }
 
-export function mapHierarchyResponseToChartState(response: RawHierarchyResponse): Pick<ChartData, 'crewDirector' | 'operationsManagers'> {
-  const hierarchy = response || {}
+function mapCrewDirector(raw: RawCrewDirector, sortOrder: number): CrewDirectorNode {
   return {
-    crewDirector: mapPerson(hierarchy.crewDirector, 'CREW_DIRECTOR', hierarchy.crewDirector?.id || 'director', hierarchy.crewDirector?.name || 'Crew Director', hierarchy.crewDirector?.designation || 'Crew Director'),
-    operationsManagers: (hierarchy.operationsManagers || []).map((op, index) => mapOperationsManager(op, index + 1)),
+    id: raw?.id || `crew-director-${sortOrder}`,
+    sortOrder,
+    person: mapPerson(raw?.person, 'CREW_DIRECTOR', raw?.person?.id || raw?.id || `crew-director-${sortOrder}`, raw?.person?.name || 'Crew Director', raw?.person?.designation || 'Crew Director'),
+  }
+}
+
+export function mapHierarchyResponseToChartState(response: RawHierarchyResponse): Pick<ChartData, 'crewDirectors' | 'operationsManagers'> {
+  const hierarchy = response || {}
+  const crewDirectors = (hierarchy.crewDirectors || []).map((director, index) => mapCrewDirector(director, index + 1))
+  return {
+    crewDirectors,
+    operationsManagers: (hierarchy.crewDirectors || []).flatMap((director, directorIndex) =>
+      (director.operationsManagers || []).map((op, index) => mapOperationsManager({ ...op, crewDirectorId: director.id || `crew-director-${directorIndex + 1}` }, index + 1)),
+    ),
   }
 }
 

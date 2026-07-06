@@ -90,6 +90,7 @@ model Organization {
   updatedAt     DateTime @updatedAt
 
   people               Person[]
+  crewDirectors        CrewDirector[]
   operationsManagers    OperationsManager[]
   crewManagers          CrewManager[]
   assistants            Assistant[]
@@ -109,6 +110,7 @@ model Person {
   updatedAt     DateTime      @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  crewDirector CrewDirector?
   operationsManager OperationsManager?
   crewManager CrewManager?
   assistant Assistant?
@@ -116,19 +118,36 @@ model Person {
   @@index([organizationId, workflowRole])
 }
 
+model CrewDirector {
+  id             String   @id @default(cuid())
+  organizationId String
+  personId       String   @unique
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  person             Person             @relation(fields: [personId], references: [id], onDelete: Cascade)
+  operationsManagers OperationsManager[]
+
+  @@index([organizationId, sortOrder])
+}
+
 model OperationsManager {
   id                 String   @id @default(cuid())
   organizationId     String
+  crewDirectorId     String
   personId           String   @unique
   sortOrder          Int      @default(0)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  person       Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
-  crewManagers CrewManager[]
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  crewDirector  CrewDirector @relation(fields: [crewDirectorId], references: [id], onDelete: Restrict)
+  person        Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  crewManagers  CrewManager[]
 
-  @@index([organizationId, sortOrder])
+  @@index([organizationId, crewDirectorId, sortOrder])
 }
 
 model CrewManager {

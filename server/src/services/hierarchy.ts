@@ -1,10 +1,10 @@
 import { prisma } from '../db/prisma.js'
 
 export async function getOrganizationHierarchy(organizationId: string) {
-  const [organization, crewDirector, operationsManagers, crewManagers, assistants, allocations] = await Promise.all([
+  const [organization, crewDirectors, operationsManagers, crewManagers, assistants, allocations] = await Promise.all([
     prisma.organization.findUnique({ where: { id: organizationId } }),
-    prisma.person.findFirst({ where: { organizationId, workflowRole: 'CREW_DIRECTOR' } }),
-    prisma.operationsManager.findMany({ where: { organizationId }, orderBy: { sortOrder: 'asc' }, include: { person: true } }),
+    prisma.crewDirector.findMany({ where: { organizationId }, orderBy: { sortOrder: 'asc' }, include: { person: true } }),
+    prisma.operationsManager.findMany({ where: { organizationId }, orderBy: [{ crewDirectorId: 'asc' }, { sortOrder: 'asc' }], include: { person: true } }),
     prisma.crewManager.findMany({ where: { organizationId }, orderBy: { sortOrder: 'asc' }, include: { person: true } }),
     prisma.assistant.findMany({ where: { organizationId }, orderBy: { sortOrder: 'asc' }, include: { person: true } }),
     prisma.vesselAllocation.findMany({ where: { vessel: { organizationId } }, include: { vessel: true, crewManager: { include: { person: true } }, assignedAssistant: { include: { person: true } } } }),
@@ -28,17 +28,23 @@ export async function getOrganizationHierarchy(organizationId: string) {
 
   return {
     organization,
-    crewDirector,
-    operationsManagers: operationsManagers.map((op) => ({
-      id: op.id,
-      person: op.person,
-      crewManagers: crewManagers
-        .filter((cm) => cm.operationsManagerId === op.id)
-        .map((cm) => ({
-          id: cm.id,
-          person: cm.person,
-          assistants: assistantsByCrewManager.get(cm.id) ?? [],
-          vessels: vesselsByCrewManager.get(cm.id) ?? [],
+    crewDirectors: crewDirectors.map((director) => ({
+      id: director.id,
+      person: director.person,
+      operationsManagers: operationsManagers
+        .filter((op) => op.crewDirectorId === director.id)
+        .map((op) => ({
+          id: op.id,
+          crewDirectorId: director.id,
+          person: op.person,
+          crewManagers: crewManagers
+            .filter((cm) => cm.operationsManagerId === op.id)
+            .map((cm) => ({
+              id: cm.id,
+              person: cm.person,
+              assistants: assistantsByCrewManager.get(cm.id) ?? [],
+              vessels: vesselsByCrewManager.get(cm.id) ?? [],
+            })),
         })),
     })),
   }
