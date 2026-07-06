@@ -4,7 +4,7 @@ import { chartReducer, type ChartAction } from './chartReducer'
 import { hierarchyApi } from '../api/hierarchy'
 import { organizationApi } from '../api/organization'
 import { vesselsApi } from '../api/vessels'
-import { ApiError } from '../api/client'
+import { apiClient, ApiError } from '../api/client'
 import {
   describeApiError,
   mapAssistantToApiPayload,
@@ -27,8 +27,9 @@ interface ChartContextValue {
   hasUnsavedChanges: boolean
   loadState: LoadState
   errorMessage: string
+  syncNotice: string
   saveChanges: () => Promise<void>
-  reloadFromServer: () => Promise<void>
+  reloadFromServer: (fresh?: boolean) => Promise<void>
 }
 
 const ChartContext = createContext<ChartContextValue | null>(null)
@@ -51,22 +52,43 @@ function normalizeApiError(error: unknown, fallback: string) {
 }
 
 export function ChartProvider({ children }: { children: ReactNode }) {
-  const [data, dispatch] = useReducer(chartReducer, undefined, initialData)
+  const [data, reducerDispatch] = useReducer(chartReducer, undefined, initialData)
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [errorMessage, setErrorMessage] = useState('')
+  const [syncNotice, setSyncNotice] = useState('')
   const organizationIdRef = useRef('')
   const snapshotRef = useRef<ChartData | null>(null)
   const syncingRef = useRef(false)
+  const editVersionRef = useRef(0)
+  const loadRequestRef = useRef(0)
+  const focusRefreshTimeoutRef = useRef<number | null>(null)
+  const backgroundRefreshIntervalRef = useRef<number | null>(null)
 
-  const loadFromServer = useCallback(async () => {
+  const dispatch = useCallback((action: ChartAction) => {
+    if (action.type !== 'replace') {
+      editVersionRef.current += 1
+      setErrorMessage('')
+      if (saveState !== 'saving') setSaveState('saved')
+    }
+    reducerDispatch(action)
+  }, [saveState])
+
+  const loadFromServer = useCallback(async (fresh = false) => {
+    const requestId = ++loadRequestRef.current
+    const editVersionAtStart = editVersionRef.current
     setLoadState('loading')
     setErrorMessage('')
     try {
-      const organizationResponse = await organizationApi.getOrganization() as Parameters<typeof mapOrganizationResponseToChartState>[0]
+      if (fresh) apiClient.clearGetRequestCache()
+      const organizationResponse = await organizationApi.getOrganization(fresh) as Parameters<typeof mapOrganizationResponseToChartState>[0]
       organizationIdRef.current = (organizationResponse as { organization?: { id?: string } })?.organization?.id || ''
       if (!organizationIdRef.current) {
         const emptyState = createEmptyChartData()
+        if (requestId !== loadRequestRef.current || editVersionRef.current !== editVersionAtStart) {
+          setLoadState('ready')
+          return
+        }
         snapshotRef.current = emptyState
         dispatch({ type: 'replace', data: emptyState })
         setLoadState('ready')
@@ -75,8 +97,8 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       }
 
       const [hierarchyResponse, vesselResponse] = await Promise.all([
-        hierarchyApi.getHierarchy() as Promise<Parameters<typeof mapHierarchyResponseToChartState>[0]>,
-        vesselsApi.getVessels() as Promise<Parameters<typeof mapVesselResponseListToChartVessels>[0]>,
+        hierarchyApi.getHierarchy(fresh) as Promise<Parameters<typeof mapHierarchyResponseToChartState>[0]>,
+        vesselsApi.getVessels(fresh) as Promise<Parameters<typeof mapVesselResponseListToChartVessels>[0]>,
       ])
 
       const organization = mapOrganizationResponseToChartState(organizationResponse)
@@ -90,16 +112,22 @@ export function ChartProvider({ children }: { children: ReactNode }) {
         vessels,
       }
 
+      if (requestId !== loadRequestRef.current || editVersionRef.current !== editVersionAtStart) {
+        setLoadState('ready')
+        return
+      }
+
       snapshotRef.current = chartData
       dispatch({ type: 'replace', data: chartData })
       setLoadState('ready')
       setSaveState('saved')
+      setSyncNotice('')
     } catch (error) {
       setLoadState('error')
       setSaveState('error')
       setErrorMessage(normalizeApiError(error, 'Failed to load chart data'))
     }
-  }, [])
+  }, [dispatch])
 
   const syncToServer = useCallback(async (current: ChartData, snapshot: ChartData | null) => {
     setSaveState('saving')
@@ -264,7 +292,8 @@ export function ChartProvider({ children }: { children: ReactNode }) {
 
       snapshotRef.current = workingCopy
       setSaveState('saved')
-      await loadFromServer()
+      apiClient.clearGetRequestCache()
+      await loadFromServer(true)
     } catch (error) {
       setSaveState('error')
       setErrorMessage(normalizeApiError(error, 'Failed to save changes'))
@@ -272,31 +301,53 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   }, [loadFromServer])
 
   useEffect(() => {
-    void loadFromServer()
+    void loadFromServer(true)
   }, [loadFromServer])
 
   const hasUnsavedChanges = useMemo(() => !(snapshotRef.current && equalJson(snapshotRef.current, data)), [data])
 
   useEffect(() => {
     const refreshIfClean = () => {
-      if (!syncingRef.current && !hasUnsavedChanges) void loadFromServer()
+      if (focusRefreshTimeoutRef.current) window.clearTimeout(focusRefreshTimeoutRef.current)
+      focusRefreshTimeoutRef.current = window.setTimeout(() => {
+        if (hasUnsavedChanges) {
+          setSyncNotice('New database changes may be available. Save or discard your edits before refreshing.')
+          return
+        }
+        if (!syncingRef.current && loadState === 'ready') void loadFromServer(true)
+      }, 3500)
     }
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') refreshIfClean()
     }
+
+    if (backgroundRefreshIntervalRef.current) {
+      window.clearInterval(backgroundRefreshIntervalRef.current)
+      backgroundRefreshIntervalRef.current = null
+    }
+
+    backgroundRefreshIntervalRef.current = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      if (hasUnsavedChanges || syncingRef.current || loadState !== 'ready') return
+      void loadFromServer(true)
+    }, 12000)
+
     window.addEventListener('focus', refreshIfClean)
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
+      if (focusRefreshTimeoutRef.current) window.clearTimeout(focusRefreshTimeoutRef.current)
+      if (backgroundRefreshIntervalRef.current) window.clearInterval(backgroundRefreshIntervalRef.current)
       window.removeEventListener('focus', refreshIfClean)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [hasUnsavedChanges, loadFromServer])
+  }, [hasUnsavedChanges, loadFromServer, loadState])
 
   const saveChanges = useCallback(async () => {
     if (loadState !== 'ready' || syncingRef.current) return
     if (snapshotRef.current && equalJson(snapshotRef.current, data)) {
       setSaveState('saved')
       setErrorMessage('')
+      setSyncNotice('')
       return
     }
     syncingRef.current = true
@@ -305,8 +356,8 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   }, [data, loadState, syncToServer])
 
   const value = useMemo(
-    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, saveChanges, reloadFromServer: loadFromServer }),
-    [data, saveState, hasUnsavedChanges, loadState, errorMessage, saveChanges, loadFromServer],
+    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, reloadFromServer: loadFromServer }),
+    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, loadFromServer],
   )
 
   return <ChartContext.Provider value={value}>{children}</ChartContext.Provider>

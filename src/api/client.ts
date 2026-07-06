@@ -1,4 +1,15 @@
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:8080'
+const inflightGetRequests = new Map<string, Promise<unknown>>()
+let freshDataEpoch = Date.now()
+
+function clearGetRequestCache() {
+  inflightGetRequests.clear()
+}
+
+function bumpFreshDataEpoch() {
+  freshDataEpoch = Date.now()
+  clearGetRequestCache()
+}
 
 type ApiErrorBody = { message?: string; details?: unknown }
 
@@ -20,26 +31,61 @@ function buildApiUrl(path: string) {
   return `${trimmedBaseUrl.startsWith('/') ? trimmedBaseUrl : `/${trimmedBaseUrl}`}${normalizedPath}`
 }
 
-async function request<T>(path: string, init: RequestInit = {}) {
-  const response = await fetch(buildApiUrl(path), {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init.headers || {}),
-    },
-  })
-
-  const contentType = response.headers.get('content-type') || ''
-  const payload = contentType.includes('application/json') ? await response.json().catch(() => null) : null
-  if (!response.ok) {
-    const body = (payload || {}) as ApiErrorBody
-    const message = body.message
-      || (response.status === 401 ? 'Session expired. Please log in again.' : response.status === 403 ? 'You do not have permission to perform this action.' : response.status === 422 ? 'The server rejected part of the submitted data.' : response.status >= 500 ? 'Could not connect to server.' : `Request failed (${response.status})`)
-    throw new ApiError(response.status, message, body.details)
-  }
-  return (payload ?? ({} as T)) as T
+type RequestOptions = RequestInit & {
+  fresh?: boolean
 }
 
-export const apiClient = { request }
+function withFreshQuery(url: string, fresh: boolean) {
+  if (!fresh) return url
+  const absolute = /^https?:\/\//i.test(url) ? new URL(url) : new URL(url, window.location.origin)
+  absolute.searchParams.set('ts', String(freshDataEpoch))
+  return /^https?:\/\//i.test(url) ? absolute.toString() : `${absolute.pathname}${absolute.search}`
+}
+
+async function request<T>(path: string, init: RequestOptions = {}) {
+  const method = (init.method || 'GET').toUpperCase()
+  const url = withFreshQuery(buildApiUrl(path), Boolean(init.fresh && method === 'GET'))
+  const cacheKey = `${method}:${url}:${typeof init.body === 'string' ? init.body : ''}`
+
+  const execute = async () => {
+    const response = await fetch(url, {
+      ...init,
+      credentials: 'include',
+      headers: {
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.fresh && method === 'GET' ? { 'Cache-Control': 'no-cache', Pragma: 'no-cache' } : {}),
+        ...(init.headers || {}),
+      },
+    })
+
+    const contentType = response.headers.get('content-type') || ''
+    const payload = contentType.includes('application/json') ? await response.json().catch(() => null) : null
+    if (!response.ok) {
+      const body = (payload || {}) as ApiErrorBody
+      const message = body.message
+        || (response.status === 401 ? 'Session expired. Please log in again.'
+          : response.status === 403 ? 'You do not have permission to perform this action.'
+          : response.status === 422 ? 'The server rejected part of the submitted data.'
+          : response.status === 429 ? 'Too many actions in a short time. Please wait a few seconds and try again.'
+          : response.status >= 500 ? 'Could not connect to server.'
+          : `Request failed (${response.status})`)
+      throw new ApiError(response.status, message, body.details)
+    }
+    return (payload ?? ({} as T)) as T
+  }
+
+  if (method === 'GET') {
+    if (init.fresh) return execute()
+    const existing = inflightGetRequests.get(cacheKey)
+    if (existing) return existing as Promise<T>
+    const pending = execute().finally(() => inflightGetRequests.delete(cacheKey))
+    inflightGetRequests.set(cacheKey, pending)
+    return pending as Promise<T>
+  }
+
+  bumpFreshDataEpoch()
+  return execute()
+}
+
+export const apiClient = { request, clearGetRequestCache, bumpFreshDataEpoch }
 export { rawBaseUrl as baseUrl, buildApiUrl }

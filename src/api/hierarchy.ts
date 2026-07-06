@@ -2,8 +2,8 @@ import { apiClient } from './client'
 import type { Assistant, CrewDirectorNode, Person } from '../types'
 
 export const hierarchyApi = {
-  getHierarchy() {
-    return apiClient.request('/api/hierarchy')
+  getHierarchy(fresh = false) {
+    return apiClient.request('/api/hierarchy', { fresh })
   },
   createCrewDirector(payload: CrewDirectorNode['person'] & { organizationId: string; sortOrder?: number }) {
     return apiClient.request('/api/crew-directors', { method: 'POST', body: JSON.stringify(payload) })

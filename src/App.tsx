@@ -88,7 +88,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginPage onLogin={(nextUser) => { setUser(nextUser); navigate('/', true) }} onRequestAccess={() => navigate('/request-access')} onForgotPassword={() => navigate('/forgot-password')} />
+    return <LoginPage onLogin={(nextUser) => { setUser(nextUser); navigate(publicRoutes.has(pathname) ? '/' : pathname || '/', true) }} onRequestAccess={() => navigate('/request-access')} onForgotPassword={() => navigate('/forgot-password')} />
   }
 
   const canEdit = user.role === 'ADMIN' || user.role === 'EDITOR'

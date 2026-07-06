@@ -2,8 +2,8 @@ import { apiClient } from './client'
 import type { Vessel } from '../types'
 
 export const vesselsApi = {
-  getVessels() {
-    return apiClient.request('/api/vessels')
+  getVessels(fresh = false) {
+    return apiClient.request('/api/vessels', { fresh })
   },
   createVessel(payload: Partial<Vessel>) {
     return apiClient.request('/api/vessels', { method: 'POST', body: JSON.stringify(payload) })

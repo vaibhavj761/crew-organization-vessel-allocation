@@ -8,8 +8,8 @@ export type OrganizationPayload = {
 }
 
 export const organizationApi = {
-  getOrganization() {
-    return apiClient.request('/api/organization')
+  getOrganization(fresh = false) {
+    return apiClient.request('/api/organization', { fresh })
   },
   updateOrganization(payload: OrganizationPayload) {
     return apiClient.request('/api/organization', { method: 'PATCH', body: JSON.stringify(payload) })

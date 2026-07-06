@@ -30,15 +30,21 @@ export function AppShell({
   onRefresh: () => void
   onLogout: () => void | Promise<void>
 }) {
-  const { data, saveState, hasUnsavedChanges, errorMessage, saveChanges } = useChart()
+  const { data, saveState, hasUnsavedChanges, errorMessage, syncNotice, saveChanges, loadState } = useChart()
   const [editorOpen, setEditorOpen] = useState(true)
   const [selectedOps, setSelectedOps] = useState(data.operationsManagers[0]?.id || '')
+  const [selectedDirector, setSelectedDirector] = useState(data.crewDirectors[0]?.id || '')
 
   useEffect(() => {
     if (!data.operationsManagers.some((op) => op.id === selectedOps)) {
       setSelectedOps(data.operationsManagers[0]?.id || '')
     }
   }, [data.operationsManagers, selectedOps])
+  useEffect(() => {
+    if (!data.crewDirectors.some((director) => director.id === selectedDirector)) {
+      setSelectedDirector(data.crewDirectors[0]?.id || '')
+    }
+  }, [data.crewDirectors, selectedDirector])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -78,20 +84,22 @@ export function AppShell({
         </div>
         <div className="header-actions">
           <AuthShell user={user} onLogout={onLogout} onRefresh={onRefresh} />
-          {canEdit && viewMode !== 'access' && <button className="button" onClick={() => void saveChanges()} disabled={saveState === 'saving' || !hasUnsavedChanges}>{saveState === 'saving' ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Saved'}</button>}
+          {canEdit && viewMode !== 'access' && <button className="button" onClick={() => void saveChanges()} disabled={loadState !== 'ready' || saveState === 'saving' || !hasUnsavedChanges}>{saveState === 'saving' ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Saved'}</button>}
           <span className={`save-state ${saveState === 'error' ? 'save-error' : ''}`} title={errorMessage || undefined}>
             <Check size={14} />
             {saveState === 'saved' ? (hasUnsavedChanges ? 'Unsaved changes' : 'Saved to database') : saveState === 'saving' ? 'Saving…' : errorMessage || 'Could not sync'}
           </span>
-          {(viewMode === 'overview' || viewMode === 'detail' || viewMode === 'allocation') && <ExportToolbar viewMode={viewMode} selectedOperationsManagerId={selectedOps} />}
+          {(viewMode === 'overview' || viewMode === 'detail' || viewMode === 'allocation') && <ExportToolbar viewMode={viewMode} selectedOperationsManagerId={selectedOps} selectedCrewDirectorId={selectedDirector} />}
         </div>
       </header>
       <main className="workspace">
         {canEdit && editorOpen && viewMode !== 'access' && <EditorPanel />}
         <section className="canvas-workspace">
+          {loadState === 'loading' && <div className="page-loading-banner">Loading latest database data…</div>}
+          {syncNotice && <div className="page-loading-banner notice">{syncNotice}</div>}
           <div className="canvas-toolbar">
             {canEdit && viewMode !== 'access' && (
-              <button className="icon-button" onClick={() => setEditorOpen((v) => !v)}>
+              <button className="icon-button" onClick={() => setEditorOpen((v) => !v)} disabled={loadState !== 'ready'}>
                 {editorOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
               </button>
             )}
@@ -103,6 +111,18 @@ export function AppShell({
                   {data.operationsManagers.map((op) => (
                     <option key={op.id} value={op.id}>
                       {op.person.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {viewMode === 'overview' && !!data.crewDirectors.length && (
+              <label className="inline-select">
+                Select Crew Director
+                <select value={selectedDirector} onChange={(e) => setSelectedDirector(e.target.value)}>
+                  {data.crewDirectors.map((director) => (
+                    <option key={director.id} value={director.id}>
+                      {director.person.name}
                     </option>
                   ))}
                 </select>

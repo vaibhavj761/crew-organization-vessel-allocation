@@ -22,7 +22,7 @@ export function filterVessels(vessels: Vessel[], filters: VesselFilters, operati
 }
 
 export function VesselMasterTable() {
-  const { data, dispatch } = useChart()
+  const { data, dispatch, loadState } = useChart()
   const [filters, setFilters] = useState<VesselFilters>({ search: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })
   const [editing, setEditing] = useState('')
   const crewManagers = data.operationsManagers.flatMap((op) => op.crewManagers)
@@ -30,6 +30,7 @@ export function VesselMasterTable() {
   const rows = useMemo(() => filterVessels(data.vessels, filters, operationsManagers), [data.vessels, filters])
 
   const addVessel = () => {
+    if (loadState !== 'ready') return
     const value: Vessel = {
       id: id(),
       name: 'New Vessel',
@@ -57,7 +58,7 @@ export function VesselMasterTable() {
           <h2>Vessel Master List</h2>
           <p>{rows.length} of {data.vessels.length} vessels</p>
         </div>
-        <button className="button" onClick={addVessel}><Plus size={14} /> Add vessel</button>
+        <button type="button" className="button" onClick={addVessel} disabled={loadState !== 'ready'}><Plus size={14} /> Add vessel</button>
       </div>
 
       <div className="vessel-filters">
@@ -126,8 +127,8 @@ function VesselRow({ vessel, editing, setEditing }: { vessel: Vessel; editing: b
         <td>{crewManager?.person.name || 'Unassigned'}<small>{crewManager?.assistants.find((assistant) => assistant.id === vessel.assignedAssistantId)?.name}</small></td>
         <td><span className="table-status">{vessel.vesselStatus.replaceAll('_', ' ')}</span><small>{vessel.managementType.replaceAll('_', ' ')}</small></td>
         <td>
-          <button className="mini-add" onClick={() => setEditing(vessel.id)}>Edit</button>
-          <button className="tiny-icon danger-text" onClick={() => confirm('Delete this vessel?') && dispatch({ type: 'deleteVessel', id: vessel.id })}><Trash2 size={13} /></button>
+          <button type="button" className="mini-add" onClick={() => setEditing(vessel.id)}>Edit</button>
+          <button type="button" className="tiny-icon danger-text" onClick={() => confirm('Delete this vessel?') && dispatch({ type: 'deleteVessel', id: vessel.id })}><Trash2 size={13} /></button>
         </td>
       </tr>
     )
@@ -159,7 +160,7 @@ function VesselRow({ vessel, editing, setEditing }: { vessel: Vessel; editing: b
           <option value="CREW_MANAGED">CREW_MANAGED</option>
         </select>
       </td>
-      <td><button className="button" onClick={() => setEditing('')}>Done</button></td>
+      <td><button type="button" className="button" onClick={() => setEditing('')}>Done</button></td>
     </tr>
   )
 }

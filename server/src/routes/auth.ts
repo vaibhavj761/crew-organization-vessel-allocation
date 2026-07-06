@@ -30,7 +30,7 @@ function loginStatusMessage(status: string) {
 }
 
 export async function authRoutes(app: FastifyInstance) {
-  app.post('/api/auth/login', async (request, reply) => {
+  app.post('/api/auth/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ message: 'Invalid login payload' })
 
@@ -48,12 +48,12 @@ export async function authRoutes(app: FastifyInstance) {
     return reply.send({ user: toSafeUser(updated) })
   })
 
-  app.post('/api/auth/logout', async (_request, reply) => {
+  app.post('/api/auth/logout', { config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, async (_request, reply) => {
     clearAuthCookie(reply)
     return reply.send({ success: true })
   })
 
-  app.get('/api/auth/me', async (request, reply) => {
+  app.get('/api/auth/me', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request, reply) => {
     try {
       if (!request.cookies.crew_chart_session) return reply.code(401).send({ message: 'Not authenticated' })
       const payload = await request.jwtVerify<{ sub: string }>()
@@ -65,7 +65,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
   })
 
-  app.post('/api/auth/set-password', async (request, reply) => {
+  app.post('/api/auth/set-password', { config: { rateLimit: { max: 8, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = passwordSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ message: 'Invalid password payload' })
 
@@ -99,7 +99,7 @@ export async function authRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
-  app.post('/api/auth/forgot-password', async (request, reply) => {
+  app.post('/api/auth/forgot-password', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = forgotSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ message: 'Invalid forgot password payload' })
 
@@ -122,7 +122,7 @@ export async function authRoutes(app: FastifyInstance) {
     })
   })
 
-  app.post('/api/auth/reset-password', async (request, reply) => {
+  app.post('/api/auth/reset-password', { config: { rateLimit: { max: 8, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = passwordSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ message: 'Invalid password payload' })
 

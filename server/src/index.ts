@@ -12,8 +12,31 @@ import { authRoutes } from './routes/auth.js'
 import { accessRequestRoutes } from './routes/accessRequests.js'
 import { healthRoutes } from './routes/health.js'
 import { organizationRoutes } from './routes/organization.js'
+import { getCurrentUser } from './auth/context.js'
 
 const app = Fastify({ logger: true })
+
+function allowedOrigins() {
+  const configured = new URL(env.FRONTEND_URL)
+  const allowAnyLocalDevPort = env.NODE_ENV === 'development'
+    && (configured.hostname === 'localhost' || configured.hostname === '127.0.0.1')
+
+  if (allowAnyLocalDevPort) {
+    return {
+      has(origin: string) {
+        try {
+          const candidate = new URL(origin)
+          return candidate.protocol === configured.protocol
+            && (candidate.hostname === 'localhost' || candidate.hostname === '127.0.0.1')
+        } catch {
+          return false
+        }
+      },
+    }
+  }
+
+  return new Set([env.FRONTEND_URL])
+}
 
 await app.register(helmet, {
   contentSecurityPolicy: {
@@ -23,12 +46,39 @@ await app.register(helmet, {
   },
 })
 await app.register(cors, {
-  origin: env.FRONTEND_URL,
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins().has(origin)) {
+      callback(null, true)
+      return
+    }
+    callback(new Error('Origin not allowed'), false)
+  },
   credentials: true,
 })
 await app.register(cookie)
 await app.register(jwt, { secret: env.SESSION_SECRET, cookie: { cookieName: 'crew_chart_session', signed: false } })
-await app.register(rateLimit, { max: 20, timeWindow: '1 minute' })
+await app.register(rateLimit, {
+  max: 200,
+  timeWindow: '1 minute',
+  keyGenerator: async (request) => {
+    const user = await getCurrentUser(request)
+    if (user?.id) return `user:${user.id}`
+    const forwarded = request.headers['x-forwarded-for']
+    const ip = Array.isArray(forwarded) ? forwarded[0] : typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : request.ip
+    return `ip:${ip || 'unknown'}`
+  },
+})
+
+app.addHook('onSend', async (request, reply, payload) => {
+  if (new URL(request.url, 'http://localhost').pathname.startsWith('/api/')) {
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    reply.header('Pragma', 'no-cache')
+    reply.header('Expires', '0')
+    reply.header('Surrogate-Control', 'no-store')
+    reply.header('Vary', 'Origin, Cookie')
+  }
+  return payload
+})
 
 await app.register(healthRoutes)
 await app.register(authRoutes)

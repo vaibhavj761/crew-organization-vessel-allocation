@@ -43,7 +43,7 @@ async function requireAdmin(request: Parameters<typeof requireCurrentUser>[0], r
 }
 
 export async function accessRequestRoutes(app: FastifyInstance) {
-  app.post('/api/access-requests', async (request, reply) => {
+  app.post('/api/access-requests', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (request, reply) => {
     const parsed = accessRequestSchema.safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid access request payload', parsed.error.flatten())
 
@@ -76,7 +76,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     })
   })
 
-  app.get('/api/admin/access-requests', async (request, reply) => {
+  app.get('/api/admin/access-requests', { config: { rateLimit: { max: 90, timeWindow: '1 minute' } } }, async (request, reply) => {
     const admin = await requireAdmin(request, reply)
     if (!admin) return
 
@@ -104,7 +104,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     return reply.send({ requests })
   })
 
-  app.post('/api/admin/access-requests/:id/approve', async (request, reply) => {
+  app.post('/api/admin/access-requests/:id/approve', { config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, async (request, reply) => {
     const admin = await requireAdmin(request, reply)
     if (!admin) return
 
@@ -144,7 +144,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     })
   })
 
-  app.post('/api/admin/access-requests/:id/reject', async (request, reply) => {
+  app.post('/api/admin/access-requests/:id/reject', { config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, async (request, reply) => {
     const admin = await requireAdmin(request, reply)
     if (!admin) return
     const params = request.params as { id: string }
@@ -172,7 +172,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
-  app.post('/api/admin/users/:id/setup-link', async (request, reply) => {
+  app.post('/api/admin/users/:id/setup-link', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request, reply) => {
     const admin = await requireAdmin(request, reply)
     if (!admin) return
 
@@ -198,7 +198,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     })
   })
 
-  app.patch('/api/admin/users/:id', async (request, reply) => {
+  app.patch('/api/admin/users/:id', { config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, async (request, reply) => {
     const admin = await requireAdmin(request, reply)
     if (!admin) return
 
