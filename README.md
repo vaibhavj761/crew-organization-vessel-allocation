@@ -218,6 +218,7 @@ Backend:
 
 - `DATABASE_URL`
 - `SESSION_SECRET`
+- `PORT`
 - `NODE_ENV=production`
 - `FRONTEND_URL`
 - `ADMIN_SEED_EMAIL`
@@ -235,19 +236,19 @@ For the one-service App Platform setup, set `VITE_API_BASE_URL=/api` at build ti
 Install command:
 
 ```bash
-npm install && cd server && npm install
+npm run do:install
 ```
 
 Build command:
 
 ```bash
-npm run build && cd server && npm run build
+npm run do:build
 ```
 
 Run command:
 
 ```bash
-cd server && npm run start
+npm run do:start
 ```
 
 The frontend build output stays in the root `dist/` folder. The Fastify server now serves that folder for non-API routes and returns `index.html` for SPA paths such as `/set-password?token=...`.
@@ -259,19 +260,31 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 3. Make sure it includes `?sslmode=require`.
 4. Do not commit the Neon URL to GitHub.
 5. Run Prisma migrations against Neon with `npm run prisma:migrate` from `server/`.
+6. Run `npm run seed:admin` once from `server/`.
 
 ### Deployment checklist
 
 1. Push the repo to GitHub.
 2. Create the DigitalOcean App Platform app from GitHub.
-3. Add the production environment variables above.
-4. Build and run using the commands listed above.
-5. Run `npm run prisma:migrate` once against Neon.
-6. Run `npm run seed:admin` once to create the first admin.
-7. Open the `ondigitalocean.app` URL.
-8. Log in with the seeded admin.
-9. Approve other users manually.
-10. Export JSON after setup and after major changes.
+3. Set the app type to a single web service.
+4. Add the production environment variables above.
+5. Set `FRONTEND_URL` to the exact `https://your-app-name.ondigitalocean.app` URL.
+6. Set `VITE_API_BASE_URL=/api`.
+7. Use the install, build, and run commands listed above.
+8. Run `npm run prisma:migrate` once against Neon.
+9. Run `npm run seed:admin` once to create the first admin.
+10. Open the `ondigitalocean.app` URL.
+11. Log in with the seeded admin.
+12. Approve other users manually.
+13. Export JSON after setup and after major changes.
+
+### Production behavior
+
+- The backend serves both the Vite frontend and `/api/*` routes.
+- `GET /api/health` remains available for App Platform health checks.
+- Unknown non-API routes return `index.html`, so setup/reset links work directly.
+- Cookies are `httpOnly`, use `sameSite=lax`, and switch to `secure=true` in production.
+- CORS allows only the configured `FRONTEND_URL` and keeps `credentials: true`.
 
 ### Security checklist
 

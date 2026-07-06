@@ -12,5 +12,10 @@ export function setAuthCookie(reply: FastifyReply, token: string) {
 }
 
 export function clearAuthCookie(reply: FastifyReply) {
-  reply.clearCookie(authCookieName, { path: '/' })
+  reply.clearCookie(authCookieName, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  })
 }

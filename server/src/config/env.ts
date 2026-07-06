@@ -4,6 +4,7 @@ import { z } from 'zod'
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(32),
+  PORT: z.coerce.number().int().positive().default(8080),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   FRONTEND_URL: z.string().url(),
   ADMIN_SEED_EMAIL: z.string().email().optional().or(z.literal('')),
