@@ -1,5 +1,5 @@
 import { Copy, Link2, RefreshCw, ShieldCheck, UserCheck, UserMinus, UserRoundCog } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiClient } from '../api/client'
 
 type Role = 'ADMIN' | 'EDITOR' | 'VIEWER' | 'BOSS_VIEWER'
@@ -50,21 +50,57 @@ export function AdminAccessRequests() {
   const [error, setError] = useState('')
   const [setupLink, setSetupLink] = useState('')
   const [busyId, setBusyId] = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [refreshNotice, setRefreshNotice] = useState('')
 
-  const load = async () => {
+  const hasUnsavedRoleDrafts = users.some((item) => (roleDrafts[item.id] || item.role) !== item.role)
+
+  const load = useCallback(async (fresh = true) => {
+    if (busyId) return
+    if (hasUnsavedRoleDrafts) {
+      setRefreshNotice('New access-request data is available. Save or finish your role edits before refreshing.')
+      return
+    }
+    setIsRefreshing(true)
     setError('')
     try {
-      const response = await apiClient.request<{ requests: RequestItem[] }>('/api/admin/access-requests')
+      if (fresh) apiClient.clearGetRequestCache()
+      const response = await apiClient.request<{ requests: RequestItem[] }>('/api/admin/access-requests', { fresh })
       setUsers(response.requests)
       setRoleDrafts(Object.fromEntries(response.requests.map((item) => [item.id, item.role || 'VIEWER'])))
+      setRefreshNotice('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load access requests')
+    } finally {
+      setIsRefreshing(false)
     }
-  }
+  }, [busyId, hasUnsavedRoleDrafts])
 
   useEffect(() => {
-    void load()
-  }, [])
+    void load(true)
+  }, [load])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void load(true)
+    }, 15000)
+
+    const onFocus = () => {
+      void load(true)
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void load(true)
+    }
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [busyId, load])
 
   const grouped = useMemo(() => ({
     pending: users.filter((item) => item.status === 'PENDING_APPROVAL'),
@@ -165,6 +201,13 @@ export function AdminAccessRequests() {
           <SummaryCard title="Disabled / Rejected" count={grouped.disabled.length} icon={<UserMinus size={16} />} />
         </div>
 
+        <div className="backup-actions">
+          <button className="button secondary" onClick={() => void load(true)} disabled={isRefreshing || !!busyId}>
+            <RefreshCw size={14} />
+            {isRefreshing ? 'Refreshing…' : 'Refresh requests'}
+          </button>
+        </div>
+
         {setupLink && (
           <div className="admin-link-panel">
             <strong>Manual setup link</strong>
@@ -177,6 +220,7 @@ export function AdminAccessRequests() {
         )}
 
         {message && <p className="helper-copy admin-feedback ok">{message}</p>}
+        {refreshNotice && <p className="helper-copy">{refreshNotice}</p>}
         {error && <p className="form-error">{error}</p>}
 
         <Section title="Pending Requests" items={grouped.pending} emptyText="No pending requests right now.">

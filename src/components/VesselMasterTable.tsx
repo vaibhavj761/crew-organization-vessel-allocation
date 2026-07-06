@@ -3,8 +3,9 @@ import { Plus, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useChart } from '../state/ChartContext'
 import type { Vessel, VesselFilters } from '../types'
+import { createId } from '../utils/createId'
 
-const id = () => crypto.randomUUID()
+const id = () => createId()
 
 export function filterVessels(vessels: Vessel[], filters: VesselFilters, operationsManagers: { id: string; crewManagerIds: string[] }[]) {
   const crewManagerIds = filters.operationsManagerId
@@ -21,34 +22,40 @@ export function filterVessels(vessels: Vessel[], filters: VesselFilters, operati
   })
 }
 
-export function VesselMasterTable() {
+export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
   const { data, dispatch, loadState } = useChart()
   const [filters, setFilters] = useState<VesselFilters>({ search: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })
   const [editing, setEditing] = useState('')
+  const [error, setError] = useState('')
   const crewManagers = data.operationsManagers.flatMap((op) => op.crewManagers)
   const operationsManagers = data.operationsManagers.map((op) => ({ id: op.id, crewManagerIds: op.crewManagers.map((cm) => cm.id) }))
   const rows = useMemo(() => filterVessels(data.vessels, filters, operationsManagers), [data.vessels, filters])
 
   const addVessel = () => {
     if (loadState !== 'ready') return
-    const value: Vessel = {
-      id: id(),
-      name: 'New Vessel',
-      vesselType: '',
-      vesselDoc: '',
-      deadweightTonnage: '',
-      ownerPool: '',
-      ownerName: '',
-      vesselManager: '',
-      crewManagerId: '',
-      assignedAssistantId: '',
-      vesselStatus: 'UPCOMING',
-      managementType: 'FULL_MANAGED',
-      notes: '',
-      sortOrder: data.vessels.length + 1,
+    setError('')
+    try {
+      const value: Vessel = {
+        id: id(),
+        name: 'New Vessel',
+        vesselType: '',
+        vesselDoc: '',
+        deadweightTonnage: '',
+        ownerPool: '',
+        ownerName: '',
+        vesselManager: '',
+        crewManagerId: '',
+        assignedAssistantId: '',
+        vesselStatus: 'UPCOMING',
+        managementType: 'FULL_MANAGED',
+        notes: '',
+        sortOrder: data.vessels.length + 1,
+      }
+      dispatch({ type: 'addVessel', value })
+      setEditing(value.id)
+    } catch {
+      setError('Vessel could not be added. Please try again.')
     }
-    dispatch({ type: 'addVessel', value })
-    setEditing(value.id)
   }
 
   return (
@@ -58,7 +65,7 @@ export function VesselMasterTable() {
           <h2>Vessel Master List</h2>
           <p>{rows.length} of {data.vessels.length} vessels</p>
         </div>
-        <button type="button" className="button" onClick={addVessel} disabled={loadState !== 'ready'}><Plus size={14} /> Add vessel</button>
+        {canEdit ? <button type="button" className="button" onClick={addVessel} disabled={loadState !== 'ready'}><Plus size={14} /> Add vessel</button> : null}
       </div>
 
       <div className="vessel-filters">
@@ -89,6 +96,8 @@ export function VesselMasterTable() {
         </select>
       </div>
 
+      {error ? <p className="form-error">{error}</p> : null}
+
       <div className="vessel-table-wrap">
         <table className="vessel-table">
           <thead>
@@ -103,7 +112,7 @@ export function VesselMasterTable() {
           </thead>
           <tbody>
             {rows.map((vessel) => (
-              <VesselRow key={vessel.id} vessel={vessel} editing={editing === vessel.id} setEditing={setEditing} />
+              <VesselRow key={vessel.id} vessel={vessel} editing={editing === vessel.id} setEditing={setEditing} canEdit={canEdit} />
             ))}
           </tbody>
         </table>
@@ -112,7 +121,7 @@ export function VesselMasterTable() {
   )
 }
 
-function VesselRow({ vessel, editing, setEditing }: { vessel: Vessel; editing: boolean; setEditing: (id: string) => void }) {
+function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; editing: boolean; setEditing: (id: string) => void; canEdit: boolean }) {
   const { data, dispatch } = useChart()
   const crewManagers = data.operationsManagers.flatMap((op) => op.crewManagers)
   const crewManager = crewManagers.find((item) => item.id === vessel.crewManagerId)
@@ -126,10 +135,10 @@ function VesselRow({ vessel, editing, setEditing }: { vessel: Vessel; editing: b
         <td>{vessel.ownerName || vessel.ownerPool}<small>{vessel.vesselManager}</small></td>
         <td>{crewManager?.person.name || 'Unassigned'}<small>{crewManager?.assistants.find((assistant) => assistant.id === vessel.assignedAssistantId)?.name}</small></td>
         <td><span className="table-status">{vessel.vesselStatus.replaceAll('_', ' ')}</span><small>{vessel.managementType.replaceAll('_', ' ')}</small></td>
-        <td>
+        <td>{canEdit ? <>
           <button type="button" className="mini-add" onClick={() => setEditing(vessel.id)}>Edit</button>
           <button type="button" className="tiny-icon danger-text" onClick={() => confirm('Delete this vessel?') && dispatch({ type: 'deleteVessel', id: vessel.id })}><Trash2 size={13} /></button>
-        </td>
+        </> : null}</td>
       </tr>
     )
   }

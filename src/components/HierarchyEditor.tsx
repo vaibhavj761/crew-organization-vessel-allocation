@@ -1,9 +1,10 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useChart } from '../state/ChartContext'
 import type { Assistant, CrewDirectorNode, CrewManagerNode, OperationsManagerNode } from '../types'
+import { createId } from '../utils/createId'
 import { PersonFields, TextField } from './FormFields'
 
-const id = () => crypto.randomUUID()
+const id = () => createId()
 const person = <R extends 'CREW_DIRECTOR' | 'OPERATIONS_MANAGER' | 'CREW_MANAGER'>(role: R) => ({
   id: id(),
   name: role === 'CREW_DIRECTOR' ? 'New Crew Director' : role === 'OPERATIONS_MANAGER' ? 'New Operations Manager' : 'New Crew Manager',

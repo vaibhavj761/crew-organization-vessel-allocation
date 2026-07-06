@@ -1,5 +1,5 @@
 import { Check, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useChart } from '../state/ChartContext'
 import type { SafeUser, ViewMode } from '../types'
 import { AccessDeniedPage } from './AccessDeniedPage'
@@ -30,10 +30,11 @@ export function AppShell({
   onRefresh: () => void
   onLogout: () => void | Promise<void>
 }) {
-  const { data, saveState, hasUnsavedChanges, errorMessage, syncNotice, saveChanges, loadState } = useChart()
+  const { data, saveState, hasUnsavedChanges, errorMessage, syncNotice, saveChanges, loadState, reloadFromServer } = useChart()
   const [editorOpen, setEditorOpen] = useState(true)
   const [selectedOps, setSelectedOps] = useState(data.operationsManagers[0]?.id || '')
   const [selectedDirector, setSelectedDirector] = useState(data.crewDirectors[0]?.id || '')
+  const refreshedViewRef = useRef<ViewMode | ''>('')
 
   useEffect(() => {
     if (!data.operationsManagers.some((op) => op.id === selectedOps)) {
@@ -47,6 +48,10 @@ export function AppShell({
   }, [data.crewDirectors, selectedDirector])
 
   useEffect(() => {
+    refreshedViewRef.current = ''
+  }, [hasUnsavedChanges])
+
+  useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!hasUnsavedChanges) return
       event.preventDefault()
@@ -55,6 +60,14 @@ export function AppShell({
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [hasUnsavedChanges])
+
+  useEffect(() => {
+    if (viewMode === 'access') return
+    if (loadState !== 'ready' || hasUnsavedChanges) return
+    if (refreshedViewRef.current === viewMode) return
+    refreshedViewRef.current = viewMode
+    void reloadFromServer(true)
+  }, [viewMode, loadState, hasUnsavedChanges, reloadFromServer])
 
   const modes: [ViewMode, string][] = [
     ['dashboard', 'Dashboard'],
@@ -136,7 +149,7 @@ export function AppShell({
           ) : viewMode === 'access' ? (
             canAdmin ? <AdminAccessRequests /> : <AccessDeniedPage />
           ) : viewMode === 'vessels' ? (
-            <VesselMasterTable />
+            <VesselMasterTable canEdit={canEdit} />
           ) : (
             <div className="canvas-stage">
               <div className="presentation-frame">
