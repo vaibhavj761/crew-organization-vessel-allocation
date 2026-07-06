@@ -15,7 +15,7 @@ export function ImportExportPanel() {
   const { data } = useChart()
 
   return <div className="backup-actions">
-    <button className="button secondary" onClick={() => downloadJson(data)}><Download size={14} /> Export JSON</button>
-    <p className="helper-copy">JSON import is deferred until the server-backed import endpoint is ready.</p>
+    <button className="button secondary" onClick={() => downloadJson(data)}><Download size={14} /> Download JSON backup</button>
+    <p className="helper-copy">JSON import stays disabled until a server-backed import flow is ready.</p>
   </div>
 }

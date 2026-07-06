@@ -8,11 +8,11 @@ import { vesselsApi } from '../api/vessels'
 import { ApiError } from '../api/client'
 import {
   describeApiError,
+  mapAssistantToApiPayload,
   mapCrewManagerToApiPayload,
   mapHierarchyResponseToChartState,
   mapOperationsManagerToApiPayload,
   mapOrganizationResponseToChartState,
-  mapPersonToApiPayload,
   mapVesselResponseListToChartVessels,
   mapVesselToApiPayload,
 } from './apiMappers'
@@ -24,8 +24,10 @@ interface ChartContextValue {
   data: ChartData
   dispatch: Dispatch<ChartAction>
   saveState: SaveState
+  hasUnsavedChanges: boolean
   loadState: LoadState
   errorMessage: string
+  saveChanges: () => Promise<void>
   reloadFromServer: () => Promise<void>
 }
 
@@ -55,7 +57,6 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   const [errorMessage, setErrorMessage] = useState('')
   const organizationIdRef = useRef('')
   const snapshotRef = useRef<ChartData | null>(null)
-  const timerRef = useRef<number | null>(null)
   const syncingRef = useRef(false)
 
   const loadFromServer = useCallback(async () => {
@@ -94,14 +95,15 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     setErrorMessage('')
     try {
       let organizationId = organizationIdRef.current
+      const workingCopy = structuredClone(current)
 
       if (!snapshot || !equalJson(
         {
-          title: current.title,
-          organizationName: current.organizationName,
-          effectiveDate: current.effectiveDate,
-          footerText: current.footerText,
-          crewDirector: current.crewDirector,
+          title: workingCopy.title,
+          organizationName: workingCopy.organizationName,
+          effectiveDate: workingCopy.effectiveDate,
+          footerText: workingCopy.footerText,
+          crewDirector: workingCopy.crewDirector,
         },
         {
           title: snapshot.title,
@@ -112,101 +114,130 @@ export function ChartProvider({ children }: { children: ReactNode }) {
         },
       )) {
         const response = await organizationApi.updateOrganization({
-          name: current.organizationName,
-          title: current.title,
-          effectiveDate: toApiDateTime(current.effectiveDate),
-          footerText: current.footerText || null,
-          crewDirectorName: current.crewDirector.name,
-          crewDirectorDesignation: current.crewDirector.designation,
-          crewDirectorEmail: current.crewDirector.email || '',
-          crewDirectorPhone: current.crewDirector.phone || '',
-          crewDirectorNotes: current.crewDirector.notes || '',
+          name: workingCopy.organizationName,
+          title: workingCopy.title,
+          effectiveDate: toApiDateTime(workingCopy.effectiveDate),
+          footerText: workingCopy.footerText || null,
+          crewDirectorName: workingCopy.crewDirector.name,
+          crewDirectorDesignation: workingCopy.crewDirector.designation,
+          crewDirectorEmail: workingCopy.crewDirector.email || '',
+          crewDirectorPhone: workingCopy.crewDirector.phone || '',
+          crewDirectorNotes: workingCopy.crewDirector.notes || '',
         }) as { organization?: { id?: string } }
         organizationId = response.organization?.id || organizationId
         organizationIdRef.current = organizationId
       }
 
-      const needsOrganization = current.operationsManagers.length > 0 || current.vessels.length > 0
+      const needsOrganization = workingCopy.operationsManagers.length > 0 || workingCopy.vessels.length > 0
       if (!organizationId) {
         if (needsOrganization) {
           throw new Error('Organization must be created before adding hierarchy or vessels.')
         }
-        snapshotRef.current = current
+        snapshotRef.current = workingCopy
         setSaveState('saved')
         await loadFromServer()
         return
       }
 
+      const currentOps = workingCopy.operationsManagers
       const snapshotOps = new Map((snapshot?.operationsManagers || []).map((op) => [op.id, op]))
-      const currentOps = new Map(current.operationsManagers.map((op) => [op.id, op]))
-
-      for (const op of current.operationsManagers) {
+      for (const op of currentOps) {
         if (!snapshotOps.has(op.id)) {
-          const created = await hierarchyApi.createOperationsManager({ organizationId, ...mapOperationsManagerToApiPayload(op) } as never)
-          op.id = (created as { id?: string }).id || op.id
-        } else if (!equalJson(op.person, snapshotOps.get(op.id)?.person)) {
+          const created = await hierarchyApi.createOperationsManager({ organizationId, ...mapOperationsManagerToApiPayload(op) } as never) as { id?: string; person?: { id?: string } }
+          op.id = created.id || op.id
+          op.person.id = created.person?.id || op.person.id
+        } else if (!equalJson({ person: op.person, sortOrder: op.sortOrder }, { person: snapshotOps.get(op.id)?.person, sortOrder: snapshotOps.get(op.id)?.sortOrder })) {
           await hierarchyApi.updateOperationsManager(op.id, mapOperationsManagerToApiPayload(op) as never)
         }
       }
-      for (const op of snapshot?.operationsManagers || []) {
-        if (!currentOps.has(op.id)) await hierarchyApi.deleteOperationsManager(op.id)
-      }
 
-      for (const op of current.operationsManagers) {
+      for (const op of currentOps) {
         const snapOp = snapshotOps.get(op.id)
         const snapCrew = new Map((snapOp?.crewManagers || []).map((cm) => [cm.id, cm]))
-        const currentCrew = new Map(op.crewManagers.map((cm) => [cm.id, cm]))
-
         for (const cm of op.crewManagers) {
           if (!snapCrew.has(cm.id)) {
-            const created = await hierarchyApi.createCrewManager({ organizationId, operationsManagerId: op.id, ...mapCrewManagerToApiPayload(cm) } as never)
-            cm.id = (created as { id?: string }).id || cm.id
-          } else if (!equalJson(cm.person, snapCrew.get(cm.id)?.person)) {
-            await hierarchyApi.updateCrewManager(cm.id, { ...mapCrewManagerToApiPayload(cm), operationsManagerId: op.id } as never)
+            const created = await hierarchyApi.createCrewManager({ organizationId, operationsManagerId: op.id, ...mapCrewManagerToApiPayload(cm), sortOrder: cm.sortOrder } as never) as { id?: string; person?: { id?: string } }
+            const previousCrewManagerId = cm.id
+            const previousPersonId = cm.person.id
+            cm.id = created.id || cm.id
+            cm.person.id = created.person?.id || cm.person.id
+            workingCopy.vessels.forEach((vessel) => {
+              if (vessel.crewManagerId === previousCrewManagerId || vessel.crewManagerId === previousPersonId) {
+                vessel.crewManagerId = cm.id
+              }
+            })
+          } else if (!equalJson({ person: cm.person, sortOrder: cm.sortOrder, operationsManagerId: op.id }, { person: snapCrew.get(cm.id)?.person, sortOrder: snapCrew.get(cm.id)?.sortOrder, operationsManagerId: snapOp?.id })) {
+            await hierarchyApi.updateCrewManager(cm.id, { ...mapCrewManagerToApiPayload(cm), operationsManagerId: op.id, sortOrder: cm.sortOrder } as never)
           }
-        }
-        for (const cm of snapOp?.crewManagers || []) {
-          if (!currentCrew.has(cm.id)) await hierarchyApi.deleteCrewManager(cm.id)
         }
 
         for (const cm of op.crewManagers) {
           const snapCm = snapCrew.get(cm.id)
           const snapAssistants = new Map((snapCm?.assistants || []).map((assistant) => [assistant.id, assistant]))
-          const currentAssistants = new Map(cm.assistants.map((assistant) => [assistant.id, assistant]))
           for (const assistant of cm.assistants) {
             if (!snapAssistants.has(assistant.id)) {
-              const created = await hierarchyApi.createAssistant({ organizationId, crewManagerId: cm.id, ...mapPersonToApiPayload(assistant) } as never)
-              assistant.id = (created as { id?: string }).id || assistant.id
-            } else if (!equalJson(assistant, snapAssistants.get(assistant.id))) {
-              await hierarchyApi.updateAssistant(assistant.id, { crewManagerId: cm.id, ...mapPersonToApiPayload(assistant) } as never)
+              const created = await hierarchyApi.createAssistant({ organizationId, crewManagerId: cm.id, ...mapAssistantToApiPayload(assistant) } as never) as { id?: string; person?: { id?: string } }
+              const previousAssistantId = assistant.id
+              assistant.id = created.id || assistant.id
+              workingCopy.vessels.forEach((vessel) => {
+                if (vessel.assignedAssistantId === previousAssistantId) {
+                  vessel.assignedAssistantId = assistant.id
+                }
+              })
+            } else if (!equalJson({ assistant, crewManagerId: cm.id }, { assistant: snapAssistants.get(assistant.id), crewManagerId: snapCm?.id })) {
+              await hierarchyApi.updateAssistant(assistant.id, { crewManagerId: cm.id, ...mapAssistantToApiPayload(assistant) } as never)
             }
-          }
-          for (const assistant of snapCm?.assistants || []) {
-            if (!currentAssistants.has(assistant.id)) await hierarchyApi.deleteAssistant(assistant.id)
           }
         }
       }
 
       const snapshotVessels = new Map((snapshot?.vessels || []).map((vessel) => [vessel.id, vessel]))
-      const currentVessels = new Map(current.vessels.map((vessel) => [vessel.id, vessel]))
-      for (const vessel of current.vessels) {
+      const currentVessels = new Map(workingCopy.vessels.map((vessel) => [vessel.id, vessel]))
+      for (const vessel of workingCopy.vessels) {
         if (!snapshotVessels.has(vessel.id)) {
-          const created = await vesselsApi.createVessel({ organizationId, ...mapVesselToApiPayload(vessel) } as never)
-          vessel.id = (created as { id?: string }).id || vessel.id
+          const created = await vesselsApi.createVessel({ organizationId, ...mapVesselToApiPayload(vessel) } as never) as { id?: string }
+          vessel.id = created.id || vessel.id
         } else if (!equalJson(mapVesselToApiPayload(vessel), mapVesselToApiPayload(snapshotVessels.get(vessel.id)!))) {
           await vesselsApi.updateVessel(vessel.id, { organizationId, ...mapVesselToApiPayload(vessel) } as never)
         }
 
-        const snap = snapshotVessels.get(vessel.id)!
-        if (vessel.crewManagerId !== snap.crewManagerId || vessel.assignedAssistantId !== snap.assignedAssistantId) {
-          await vesselsApi.updateVesselAllocation(vessel.id, { crewManagerId: vessel.crewManagerId, assignedAssistantId: vessel.assignedAssistantId || null })
+        const snap = snapshotVessels.get(vessel.id)
+        if (!snap || vessel.crewManagerId !== snap.crewManagerId || vessel.assignedAssistantId !== snap.assignedAssistantId) {
+          await vesselsApi.updateVesselAllocation(vessel.id, {
+            crewManagerId: vessel.crewManagerId || null,
+            assignedAssistantId: vessel.assignedAssistantId || null,
+          })
         }
       }
+
+      for (const snapOp of snapshot?.operationsManagers || []) {
+        for (const snapCm of snapOp.crewManagers || []) {
+          const currentCm = currentOps.flatMap((op) => op.crewManagers).find((cm) => cm.id === snapCm.id)
+          const currentAssistants = new Map((currentCm?.assistants || []).map((assistant) => [assistant.id, assistant]))
+          for (const assistant of snapCm.assistants || []) {
+            if (!currentAssistants.has(assistant.id)) await hierarchyApi.deleteAssistant(assistant.id)
+          }
+        }
+      }
+
+      for (const snapOp of snapshot?.operationsManagers || []) {
+        const currentOp = currentOps.find((op) => op.id === snapOp.id)
+        const currentCrew = new Map((currentOp?.crewManagers || []).map((cm) => [cm.id, cm]))
+        for (const cm of snapOp.crewManagers || []) {
+          if (!currentCrew.has(cm.id)) await hierarchyApi.deleteCrewManager(cm.id)
+        }
+      }
+
       for (const vessel of snapshot?.vessels || []) {
         if (!currentVessels.has(vessel.id)) await vesselsApi.deleteVessel(vessel.id)
       }
 
-      snapshotRef.current = current
+      const currentOpsMap = new Map(currentOps.map((op) => [op.id, op]))
+      for (const op of snapshot?.operationsManagers || []) {
+        if (!currentOpsMap.has(op.id)) await hierarchyApi.deleteOperationsManager(op.id)
+      }
+
+      snapshotRef.current = workingCopy
       setSaveState('saved')
       await loadFromServer()
     } catch (error) {
@@ -219,25 +250,23 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     void loadFromServer()
   }, [loadFromServer])
 
-  useEffect(() => {
-    if (loadState !== 'ready') return
-    if (syncingRef.current) return
-    if (snapshotRef.current && equalJson(snapshotRef.current, data)) return
-    if (timerRef.current) window.clearTimeout(timerRef.current)
-    timerRef.current = window.setTimeout(() => {
-      syncingRef.current = true
-      void syncToServer(data, snapshotRef.current).finally(() => {
-        syncingRef.current = false
-      })
-    }, 500)
-    return () => {
-      if (timerRef.current) window.clearTimeout(timerRef.current)
+  const hasUnsavedChanges = useMemo(() => !(snapshotRef.current && equalJson(snapshotRef.current, data)), [data])
+
+  const saveChanges = useCallback(async () => {
+    if (loadState !== 'ready' || syncingRef.current) return
+    if (snapshotRef.current && equalJson(snapshotRef.current, data)) {
+      setSaveState('saved')
+      setErrorMessage('')
+      return
     }
+    syncingRef.current = true
+    await syncToServer(data, snapshotRef.current)
+    syncingRef.current = false
   }, [data, loadState, syncToServer])
 
   const value = useMemo(
-    () => ({ data, dispatch, saveState, loadState, errorMessage, reloadFromServer: loadFromServer }),
-    [data, saveState, loadState, errorMessage, loadFromServer],
+    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, saveChanges, reloadFromServer: loadFromServer }),
+    [data, saveState, hasUnsavedChanges, loadState, errorMessage, saveChanges, loadFromServer],
   )
 
   return <ChartContext.Provider value={value}>{children}</ChartContext.Provider>

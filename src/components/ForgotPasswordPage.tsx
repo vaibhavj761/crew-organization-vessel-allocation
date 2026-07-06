@@ -22,5 +22,5 @@ export function ForgotPasswordPage({ onBack }: { onBack: () => void }) {
     }
   }
 
-  return <div className="login-page"><form className="login-card" onSubmit={submit}><h1>Forgot password</h1><p>Request a password reset for an active account.</p><label className="field"><span>Email</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)} /></label>{message && <p>{message}</p>}{resetLink && <p className="helper-copy">Development reset link: {resetLink}</p>}{error && <p className="form-error">{error}</p>}<button className="button">Request reset</button><button type="button" className="button secondary" onClick={onBack}>Back to login</button></form></div>
+  return <div className="login-page"><form className="login-card" onSubmit={submit}><h1>Forgot password</h1><p>Request a password reset for an active account.</p><label className="field"><span>Email</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)} /></label>{message && <p className="form-success">{message}</p>}{resetLink && <p className="helper-copy">Development reset link: {resetLink}</p>}{error && <p className="form-error">{error}</p>}<button className="button">Request reset</button><button type="button" className="button secondary" onClick={onBack}>Back to login</button></form></div>
 }

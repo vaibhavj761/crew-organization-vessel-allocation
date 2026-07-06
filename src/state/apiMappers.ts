@@ -127,11 +127,17 @@ export function mapCrewManagerToApiPayload(crewManager: CrewManagerNode) {
 }
 
 export function mapOperationsManagerToApiPayload(operationsManager: OperationsManagerNode) {
-  return mapPersonToApiPayload(operationsManager.person)
+  return {
+    ...mapPersonToApiPayload(operationsManager.person),
+    sortOrder: operationsManager.sortOrder,
+  }
 }
 
 export function mapAssistantToApiPayload(assistant: Assistant) {
-  return mapPersonToApiPayload(assistant)
+  return {
+    ...mapPersonToApiPayload(assistant),
+    sortOrder: assistant.sortOrder,
+  }
 }
 
 export function mapVesselToApiPayload(vessel: Vessel) {

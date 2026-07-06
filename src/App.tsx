@@ -8,16 +8,45 @@ import { RequestAccessPage } from './components/RequestAccessPage'
 import { ForgotPasswordPage } from './components/ForgotPasswordPage'
 import { SetPasswordPage } from './components/SetPasswordPage'
 
+const publicRoutes = new Set(['/request-access', '/forgot-password', '/set-password', '/reset-password'])
+
 export default function App() {
-  const [viewMode, setViewMode] = useState<ViewMode>('overview')
+  const [viewMode, setViewMode] = useState<ViewMode>('dashboard')
   const [user, setUser] = useState<SafeUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState('')
-  const [authView, setAuthView] = useState<'login' | 'request-access' | 'forgot-password'>('login')
-  const [showAdminRequests, setShowAdminRequests] = useState(false)
-  const url = new URL(window.location.href)
-  const pathname = url.pathname
-  const token = url.searchParams.get('token') || ''
+  const [pathname, setPathname] = useState(window.location.pathname)
+  const [token, setToken] = useState(new URL(window.location.href).searchParams.get('token') || '')
+
+  useEffect(() => {
+    const onPopState = () => {
+      setPathname(window.location.pathname)
+      setToken(new URL(window.location.href).searchParams.get('token') || '')
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  const navigate = (nextPath: string, replace = false) => {
+    const method = replace ? 'replaceState' : 'pushState'
+    window.history[method]({}, '', nextPath)
+    setPathname(window.location.pathname)
+    setToken(new URL(window.location.href).searchParams.get('token') || '')
+  }
+
+  useEffect(() => {
+    const routeMap: Record<string, ViewMode> = {
+      '/': 'dashboard',
+      '/organization': 'overview',
+      '/operations-detail': 'detail',
+      '/vessel-allocation': 'allocation',
+      '/vessel-master': 'vessels',
+      '/admin/access': 'access',
+    }
+    if (!publicRoutes.has(pathname)) {
+      setViewMode(routeMap[pathname] || 'dashboard')
+    }
+  }, [pathname])
 
   const loadMe = async () => {
     setLoading(true)
@@ -44,34 +73,45 @@ export default function App() {
     return <div className="login-page"><div className="login-card"><h1>Loading…</h1><p>{authError || 'Checking your session'}</p></div></div>
   }
 
+  if (pathname === '/set-password' && token) {
+    return <SetPasswordPage token={token} title="Set password" endpoint="/api/auth/set-password" onDone={() => navigate(user ? '/' : '/', true)} message={user ? 'You are currently signed in. Completing this will set the password for the account linked to this setup link.' : undefined} />
+  }
+  if (pathname === '/reset-password' && token) {
+    return <SetPasswordPage token={token} title="Reset password" endpoint="/api/auth/reset-password" onDone={() => navigate(user ? '/' : '/', true)} message={user ? 'You are currently signed in. Completing this will reset the password for the account linked to this reset link.' : undefined} />
+  }
+  if (pathname === '/request-access') {
+    return <RequestAccessPage onBack={() => navigate(user ? '/' : '/', true)} />
+  }
+  if (pathname === '/forgot-password') {
+    return <ForgotPasswordPage onBack={() => navigate(user ? '/' : '/', true)} />
+  }
+
   if (!user) {
-    if (pathname === '/set-password' && token) {
-      return <SetPasswordPage token={token} title="Set password" endpoint="/api/auth/set-password" onDone={() => window.history.replaceState({}, '', '/')} />
-    }
-    if (pathname === '/reset-password' && token) {
-      return <SetPasswordPage token={token} title="Reset password" endpoint="/api/auth/reset-password" onDone={() => window.history.replaceState({}, '', '/')} />
-    }
-    if (authView === 'request-access') {
-      return <RequestAccessPage onBack={() => setAuthView('login')} />
-    }
-    if (authView === 'forgot-password') {
-      return <ForgotPasswordPage onBack={() => setAuthView('login')} />
-    }
-    return <LoginPage onLogin={(nextUser) => setUser(nextUser)} onRequestAccess={() => setAuthView('request-access')} onForgotPassword={() => setAuthView('forgot-password')} />
+    return <LoginPage onLogin={(nextUser) => { setUser(nextUser); navigate('/', true) }} onRequestAccess={() => navigate('/request-access')} onForgotPassword={() => navigate('/forgot-password')} />
   }
 
   const canEdit = user.role === 'ADMIN' || user.role === 'EDITOR'
+  const canAdmin = user.role === 'ADMIN'
 
   return (
     <AppShell
       viewMode={viewMode}
-      onViewModeChange={setViewMode}
+      onViewModeChange={(nextView) => {
+        const pathByView: Record<ViewMode, string> = {
+          dashboard: '/',
+          overview: '/organization',
+          detail: '/operations-detail',
+          allocation: '/vessel-allocation',
+          vessels: '/vessel-master',
+          access: '/admin/access',
+        }
+        navigate(pathByView[nextView] || '/')
+      }}
       user={user}
       canEdit={canEdit}
+      canAdmin={canAdmin}
       onRefresh={loadMe}
-      onLogout={() => setUser(null)}
-      showAdminRequests={showAdminRequests}
-      onToggleAdminRequests={() => setShowAdminRequests((value) => !value)}
+      onLogout={() => { setUser(null); navigate('/', true) }}
     />
   )
 }

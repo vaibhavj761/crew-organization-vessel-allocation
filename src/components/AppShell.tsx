@@ -2,35 +2,35 @@ import { Check, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useChart } from '../state/ChartContext'
 import type { SafeUser, ViewMode } from '../types'
+import { AccessDeniedPage } from './AccessDeniedPage'
+import { AdminAccessRequests } from './AdminAccessRequests'
+import { AuthShell } from './AuthShell'
+import { DashboardPage } from './DashboardPage'
 import { EditorPanel } from './EditorPanel'
 import { ExportToolbar } from './ExportToolbar'
 import { OrgChartView } from './OrgChartView'
 import { OperationsDetailView } from './OperationsDetailView'
 import { VesselAllocationView } from './VesselAllocationView'
 import { VesselMasterTable } from './VesselMasterTable'
-import { AuthShell } from './AuthShell'
-import { AdminAccessRequests } from './AdminAccessRequests'
 
 export function AppShell({
   viewMode,
   onViewModeChange,
   user,
   canEdit,
+  canAdmin,
   onRefresh,
   onLogout,
-  showAdminRequests,
-  onToggleAdminRequests,
 }: {
   viewMode: ViewMode
   onViewModeChange: (m: ViewMode) => void
   user: SafeUser
   canEdit: boolean
+  canAdmin: boolean
   onRefresh: () => void
   onLogout: () => void | Promise<void>
-  showAdminRequests: boolean
-  onToggleAdminRequests: () => void
 }) {
-  const { data, saveState, errorMessage } = useChart()
+  const { data, saveState, hasUnsavedChanges, errorMessage, saveChanges } = useChart()
   const [editorOpen, setEditorOpen] = useState(true)
   const [selectedOps, setSelectedOps] = useState(data.operationsManagers[0]?.id || '')
 
@@ -41,11 +41,13 @@ export function AppShell({
   }, [data.operationsManagers, selectedOps])
 
   const modes: [ViewMode, string][] = [
+    ['dashboard', 'Dashboard'],
     ['overview', 'Organization'],
     ['detail', 'Operations detail'],
     ['allocation', 'Vessel allocation'],
     ['vessels', 'Vessel master'],
   ]
+  if (canAdmin) modes.push(['access', 'Access management'])
 
   return (
     <div className={`app-shell ${editorOpen ? '' : 'editor-collapsed'} ${canEdit ? '' : 'read-only'}`}>
@@ -66,20 +68,19 @@ export function AppShell({
         </div>
         <div className="header-actions">
           <AuthShell user={user} onLogout={onLogout} onRefresh={onRefresh} />
-          {user.role === 'ADMIN' && <button className="button secondary" onClick={onToggleAdminRequests}>{showAdminRequests ? 'Close requests' : 'Access requests'}</button>}
+          {canEdit && viewMode !== 'access' && <button className="button" onClick={() => void saveChanges()} disabled={saveState === 'saving' || !hasUnsavedChanges}>{saveState === 'saving' ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Saved'}</button>}
           <span className={`save-state ${saveState === 'error' ? 'save-error' : ''}`} title={errorMessage || undefined}>
             <Check size={14} />
-            {saveState === 'saved' ? 'Loaded from server' : saveState === 'saving' ? 'Saving…' : errorMessage || 'Could not sync'}
+            {saveState === 'saved' ? (hasUnsavedChanges ? 'Unsaved changes' : 'Saved to database') : saveState === 'saving' ? 'Saving…' : errorMessage || 'Could not sync'}
           </span>
-          {viewMode !== 'vessels' && <ExportToolbar viewMode={viewMode} selectedOperationsManagerId={selectedOps} />}
+          {(viewMode === 'overview' || viewMode === 'detail' || viewMode === 'allocation') && <ExportToolbar viewMode={viewMode} selectedOperationsManagerId={selectedOps} />}
         </div>
       </header>
       <main className="workspace">
-        {canEdit && editorOpen && <EditorPanel />}
+        {canEdit && editorOpen && viewMode !== 'access' && <EditorPanel />}
         <section className="canvas-workspace">
-          {showAdminRequests ? <AdminAccessRequests /> : null}
           <div className="canvas-toolbar">
-            {canEdit && (
+            {canEdit && viewMode !== 'access' && (
               <button className="icon-button" onClick={() => setEditorOpen((v) => !v)}>
                 {editorOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
               </button>
@@ -98,9 +99,13 @@ export function AppShell({
               </label>
             )}
             {!canEdit && <span className="read-only-pill">Read-only access</span>}
-            <span className="zoom-label">16:9 presentation preview</span>
+            <span className="zoom-label">{viewMode === 'dashboard' ? 'Connected workspace' : viewMode === 'access' ? 'Administrator workspace' : '16:9 presentation preview'}</span>
           </div>
-          {viewMode === 'vessels' ? (
+          {viewMode === 'dashboard' ? (
+            <DashboardPage />
+          ) : viewMode === 'access' ? (
+            canAdmin ? <AdminAccessRequests /> : <AccessDeniedPage />
+          ) : viewMode === 'vessels' ? (
             <VesselMasterTable />
           ) : (
             <div className="canvas-stage">

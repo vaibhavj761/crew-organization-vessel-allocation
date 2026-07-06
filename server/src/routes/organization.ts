@@ -140,9 +140,9 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!org) return notFound(reply, 'Organization not configured')
     if (parsed.data.workflowRole !== 'OPERATIONS_MANAGER') return badRequest(reply, 'workflowRole must be OPERATIONS_MANAGER')
     const createdManager = await prisma.$transaction(async (tx) => {
-      const person = await tx.person.create({ data: { ...parsed.data, email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
+      const person = await tx.person.create({ data: { organizationId: parsed.data.organizationId, name: parsed.data.name, designation: parsed.data.designation, workflowRole: parsed.data.workflowRole, email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
       return tx.operationsManager.create({
-        data: { organizationId: org.id, personId: person.id, sortOrder: 0 },
+        data: { organizationId: org.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 },
         include: { person: true },
       })
     })
@@ -170,6 +170,9 @@ export async function organizationRoutes(app: FastifyInstance) {
             notes: parsed.data.notes === '' ? null : parsed.data.notes ?? existing.person.notes,
           },
         })
+      }
+      if (parsed.data.sortOrder !== undefined) {
+        await tx.operationsManager.update({ where: { id: existing.id }, data: { sortOrder: parsed.data.sortOrder } })
       }
       return tx.operationsManager.findUnique({ where: { id: existing.id }, include: { person: true, crewManagers: true } })
     })
@@ -202,7 +205,7 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!parent) return notFound(reply, 'Operations manager not found')
     const createdManager = await prisma.$transaction(async (tx) => {
       const person = await tx.person.create({ data: { organizationId: org.id, name: parsed.data.name, designation: parsed.data.designation, workflowRole: 'CREW_MANAGER', email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
-      return tx.crewManager.create({ data: { organizationId: org.id, operationsManagerId: parent.id, personId: person.id, sortOrder: 0 }, include: { person: true } })
+      return tx.crewManager.create({ data: { organizationId: org.id, operationsManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
     })
     await writeAuditLog({ userId: user.id, action: 'crewManager.create', entityType: 'CrewManager', entityId: createdManager.id, afterJson: createdManager, ipAddress: requestIp(request) })
     return created(reply, createdManager)
@@ -231,6 +234,9 @@ export async function organizationRoutes(app: FastifyInstance) {
             notes: parsed.data.notes === '' ? null : parsed.data.notes ?? existing.person.notes,
           },
         })
+      }
+      if (parsed.data.sortOrder !== undefined) {
+        await tx.crewManager.update({ where: { id: existing.id }, data: { sortOrder: parsed.data.sortOrder } })
       }
       return tx.crewManager.findUnique({ where: { id: existing.id }, include: { person: true, assistants: true, vesselAllocations: true } })
     })
@@ -265,7 +271,7 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!parent) return notFound(reply, 'Crew manager not found')
     const createdAssistant = await prisma.$transaction(async (tx) => {
       const person = await tx.person.create({ data: { organizationId: org.id, name: parsed.data.name, designation: parsed.data.designation, workflowRole: 'ASSISTANT', email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
-      return tx.assistant.create({ data: { organizationId: org.id, crewManagerId: parent.id, personId: person.id, sortOrder: 0 }, include: { person: true } })
+      return tx.assistant.create({ data: { organizationId: org.id, crewManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
     })
     await writeAuditLog({ userId: user.id, action: 'assistant.create', entityType: 'Assistant', entityId: createdAssistant.id, afterJson: createdAssistant, ipAddress: requestIp(request) })
     return created(reply, createdAssistant)
@@ -298,6 +304,9 @@ export async function organizationRoutes(app: FastifyInstance) {
             notes: parsed.data.notes === '' ? null : parsed.data.notes ?? existing.person.notes,
           },
         })
+      }
+      if (parsed.data.sortOrder !== undefined) {
+        await tx.assistant.update({ where: { id: existing.id }, data: { sortOrder: parsed.data.sortOrder } })
       }
       return tx.assistant.findUnique({ where: { id: existing.id }, include: { person: true, vesselAllocations: true } })
     })
@@ -389,6 +398,15 @@ export async function organizationRoutes(app: FastifyInstance) {
     const params = request.params as { id: string }
     const vessel = await prisma.vessel.findUnique({ where: { id: params.id } })
     if (!vessel) return notFound(reply, 'Vessel not found')
+    if (!parsed.data.crewManagerId) {
+      const existingAllocation = await prisma.vesselAllocation.findUnique({ where: { vesselId: vessel.id } })
+      if (existingAllocation) {
+        await prisma.vesselAllocation.delete({ where: { vesselId: vessel.id } })
+        await writeAuditLog({ userId: user.id, action: 'vessel.allocation.cleared', entityType: 'VesselAllocation', entityId: existingAllocation.id, beforeJson: existingAllocation, afterJson: null, ipAddress: requestIp(request) })
+      }
+      return reply.send({ success: true, cleared: true })
+    }
+
     const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId }, include: { assistants: true } })
     if (!crewManager) return notFound(reply, 'Crew manager not found')
     const assistantId: string | null = parsed.data.assignedAssistantId || null

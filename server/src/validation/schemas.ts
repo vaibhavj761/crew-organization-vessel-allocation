@@ -15,6 +15,7 @@ export const personSchema = z.object({
   email: z.string().email().optional().nullable().or(z.literal('')),
   phone: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  sortOrder: z.number().int().optional(),
 })
 
 export const vesselSchema = z.object({
@@ -36,6 +37,6 @@ export const vesselSchema = z.object({
 })
 
 export const allocationSchema = z.object({
-  crewManagerId: z.string().min(1),
+  crewManagerId: z.string().min(1).optional().nullable().or(z.literal('')),
   assignedAssistantId: z.string().min(1).optional().nullable().or(z.literal('')),
 })

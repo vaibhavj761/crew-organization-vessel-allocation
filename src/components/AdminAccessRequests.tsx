@@ -83,7 +83,8 @@ export function AdminAccessRequests() {
         body: JSON.stringify({ role: roleDrafts[id] || 'VIEWER' }),
       })
       setSetupLink(response.setupLink)
-      setMessage(response.message)
+      await copyText(response.setupLink)
+      setMessage('Setup link copied.')
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Approval failed')
@@ -117,7 +118,8 @@ export function AdminAccessRequests() {
         body: JSON.stringify({}),
       })
       setSetupLink(response.setupLink)
-      setMessage(response.message)
+      await copyText(response.setupLink)
+      setMessage('Setup/reset link copied.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not generate link')
     } finally {
@@ -168,7 +170,7 @@ export function AdminAccessRequests() {
             <strong>Manual setup link</strong>
             <p>{setupLink}</p>
             <div className="backup-actions admin-link-actions">
-              <button className="button secondary" onClick={() => void copyText(setupLink)}><Copy size={14} /> Copy setup link</button>
+              <button className="button secondary" onClick={() => void copyText(setupLink).then(() => setMessage('Copied.'))}><Copy size={14} /> Copy setup link</button>
               <button className="button secondary" onClick={() => void copyMessage()}><ShieldCheck size={14} /> Copy message text</button>
             </div>
           </div>

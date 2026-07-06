@@ -14,7 +14,7 @@ export const vesselsApi = {
   deleteVessel(id: string) {
     return apiClient.request(`/api/vessels/${id}`, { method: 'DELETE' })
   },
-  updateVesselAllocation(id: string, payload: { crewManagerId: string; assignedAssistantId?: string | null }) {
+  updateVesselAllocation(id: string, payload: { crewManagerId?: string | null; assignedAssistantId?: string | null }) {
     return apiClient.request(`/api/vessels/${id}/allocation`, { method: 'PATCH', body: JSON.stringify(payload) })
   },
 }
