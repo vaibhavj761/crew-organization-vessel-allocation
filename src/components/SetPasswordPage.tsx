@@ -14,6 +14,10 @@ export function SetPasswordPage({ token, onDone, title, endpoint }: { token: str
       setError('Passwords do not match')
       return
     }
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters long')
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -21,8 +25,7 @@ export function SetPasswordPage({ token, onDone, title, endpoint }: { token: str
         method: 'POST',
         body: JSON.stringify({ token, newPassword }),
       })
-      setDone('Password saved successfully. You can now sign in.')
-      onDone()
+      setDone('Password saved successfully. You can now return to sign in.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Password update failed')
     } finally {
@@ -30,5 +33,5 @@ export function SetPasswordPage({ token, onDone, title, endpoint }: { token: str
     }
   }
 
-  return <div className="login-page"><form className="login-card" onSubmit={submit}><h1>{title}</h1><p>Create your permanent password to continue.</p><label className="field"><span>New password</span><input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} /></label><label className="field"><span>Confirm password</span><input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} /></label>{done && <p>{done}</p>}{error && <p className="form-error">{error}</p>}<button className="button" disabled={loading}>{loading ? 'Saving…' : 'Save password'}</button></form></div>
+  return <div className="login-page"><form className="login-card login-card-wide" onSubmit={submit}><h1>{title}</h1><p>Create your permanent password to continue.</p><p className="helper-copy">Use at least 8 characters. This link is one-time use and expires automatically.</p><label className="field"><span>New password</span><input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} /></label><label className="field"><span>Confirm password</span><input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} /></label>{done && <p className="helper-copy admin-feedback ok">{done}</p>}{error && <p className="form-error">{error}</p>}<button className="button" disabled={loading}>{loading ? 'Saving…' : 'Save password'}</button>{done && <button type="button" className="button secondary" onClick={onDone}>Back to sign in</button>}</form></div>
 }

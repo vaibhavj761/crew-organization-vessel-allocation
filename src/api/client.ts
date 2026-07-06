@@ -1,4 +1,4 @@
-const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:8080'
 
 type ApiErrorBody = { message?: string; details?: unknown }
 
@@ -12,8 +12,16 @@ export class ApiError extends Error {
   }
 }
 
+function buildApiUrl(path: string) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  if (!rawBaseUrl || rawBaseUrl === '/api') return normalizedPath
+  const trimmedBaseUrl = rawBaseUrl.replace(/\/+$/, '')
+  if (/^https?:\/\//i.test(trimmedBaseUrl)) return `${trimmedBaseUrl}${normalizedPath}`
+  return `${trimmedBaseUrl.startsWith('/') ? trimmedBaseUrl : `/${trimmedBaseUrl}`}${normalizedPath}`
+}
+
 async function request<T>(path: string, init: RequestInit = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     ...init,
     credentials: 'include',
     headers: {
@@ -34,4 +42,4 @@ async function request<T>(path: string, init: RequestInit = {}) {
 }
 
 export const apiClient = { request }
-export { baseUrl }
+export { rawBaseUrl as baseUrl, buildApiUrl }

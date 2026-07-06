@@ -15,7 +15,13 @@ import { organizationRoutes } from './routes/organization.js'
 
 const app = Fastify({ logger: true })
 
-await app.register(helmet)
+await app.register(helmet, {
+  contentSecurityPolicy: {
+    directives: {
+      'upgrade-insecure-requests': env.ENABLE_HTTPS_CSP ? [] : null,
+    },
+  },
+})
 await app.register(cors, {
   origin: env.FRONTEND_URL,
   credentials: true,
@@ -29,7 +35,7 @@ await app.register(authRoutes)
 await app.register(accessRequestRoutes)
 await app.register(organizationRoutes)
 
-const frontendDistDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../dist')
+const frontendDistDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../dist')
 const indexHtmlPath = path.join(frontendDistDir, 'index.html')
 
 function isApiPath(url: string) {

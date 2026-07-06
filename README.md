@@ -200,6 +200,67 @@ VITE_API_BASE_URL=http://localhost:8080
 - The frontend uses pure mapper helpers in `src/state/apiMappers.ts` to convert API responses into chart state and API payloads.
 - localStorage is not used for organization, hierarchy, vessel, or allocation data.
 
+### Environment examples
+
+Local development:
+
+Backend `server/.env`
+
+```bash
+DATABASE_URL=postgresql://...
+SESSION_SECRET=replace-with-a-long-secret
+PORT=8080
+NODE_ENV=development
+COOKIE_SECURE=false
+ENABLE_HTTPS_CSP=false
+FRONTEND_URL=http://localhost:5173
+ADMIN_SEED_EMAIL=admin@example.com
+ADMIN_SEED_PASSWORD=replace-me
+ADMIN_SEED_NAME=Admin User
+```
+
+Frontend `.env`
+
+```bash
+VITE_API_BASE_URL=http://localhost:8080
+```
+
+Temporary Droplet HTTP beta:
+
+Backend `server/.env`
+
+```bash
+NODE_ENV=production
+COOKIE_SECURE=false
+ENABLE_HTTPS_CSP=false
+FRONTEND_URL=http://64.227.191.130:8081
+PORT=8081
+```
+
+Frontend `.env`
+
+```bash
+VITE_API_BASE_URL=http://64.227.191.130:8081
+```
+
+Future HTTPS deployment:
+
+Backend `server/.env`
+
+```bash
+NODE_ENV=production
+COOKIE_SECURE=true
+ENABLE_HTTPS_CSP=true
+FRONTEND_URL=https://crew.example.com
+PORT=8081
+```
+
+Frontend `.env`
+
+```bash
+VITE_API_BASE_URL=https://crew.example.com
+```
+
 ## Low-cost deployment: DigitalOcean App Platform + Neon PostgreSQL
 
 Recommended production structure:
@@ -220,6 +281,8 @@ Backend:
 - `SESSION_SECRET`
 - `PORT`
 - `NODE_ENV=production`
+- `COOKIE_SECURE`
+- `ENABLE_HTTPS_CSP`
 - `FRONTEND_URL`
 - `ADMIN_SEED_EMAIL`
 - `ADMIN_SEED_PASSWORD`
@@ -283,7 +346,8 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 - The backend serves both the Vite frontend and `/api/*` routes.
 - `GET /api/health` remains available for App Platform health checks.
 - Unknown non-API routes return `index.html`, so setup/reset links work directly.
-- Cookies are `httpOnly`, use `sameSite=lax`, and switch to `secure=true` in production.
+- Cookies are `httpOnly`, use `sameSite=lax`, and `secure` is controlled by `COOKIE_SECURE`.
+- Helmet only enables `upgrade-insecure-requests` when `ENABLE_HTTPS_CSP=true`.
 - CORS allows only the configured `FRONTEND_URL` and keeps `credentials: true`.
 
 ### Security checklist

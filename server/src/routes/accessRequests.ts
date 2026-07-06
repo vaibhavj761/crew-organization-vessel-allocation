@@ -17,6 +17,21 @@ const approveSchema = z.object({
   role: z.enum(['ADMIN', 'EDITOR', 'VIEWER', 'BOSS_VIEWER']),
 })
 
+const updateUserSchema = z.object({
+  role: z.enum(['ADMIN', 'EDITOR', 'VIEWER', 'BOSS_VIEWER']).optional(),
+  status: z.enum(['ACTIVE', 'DISABLED', 'APPROVED_NEEDS_PASSWORD', 'REJECTED']).optional(),
+})
+
+async function activeAdminCount() {
+  return prisma.user.count({
+    where: {
+      role: 'ADMIN',
+      isActive: true,
+      status: { in: ['ACTIVE', 'APPROVED_NEEDS_PASSWORD'] },
+    },
+  })
+}
+
 async function requireAdmin(request: Parameters<typeof requireCurrentUser>[0], reply: Parameters<typeof requireCurrentUser>[1]) {
   const user = await requireCurrentUser(request, reply)
   if (!user) return null
@@ -67,7 +82,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
 
     const requests = await prisma.user.findMany({
       where: {
-        status: { in: ['PENDING_APPROVAL', 'APPROVED_NEEDS_PASSWORD', 'REJECTED'] },
+        status: { in: ['PENDING_APPROVAL', 'APPROVED_NEEDS_PASSWORD', 'ACTIVE', 'REJECTED', 'DISABLED'] },
       },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -80,6 +95,8 @@ export async function accessRequestRoutes(app: FastifyInstance) {
         status: true,
         approvedAt: true,
         rejectedAt: true,
+        lastLoginAt: true,
+        isActive: true,
         createdAt: true,
       },
     })
@@ -153,5 +170,75 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     })
 
     return reply.send({ success: true })
+  })
+
+  app.post('/api/admin/users/:id/setup-link', async (request, reply) => {
+    const admin = await requireAdmin(request, reply)
+    if (!admin) return
+
+    const params = request.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id: params.id } })
+    if (!user) return notFound(reply, 'User not found')
+    if (user.status === 'DISABLED' || user.status === 'REJECTED') return badRequest(reply, 'Cannot generate a setup link for this user.')
+
+    const tokenType = user.status === 'APPROVED_NEEDS_PASSWORD' ? 'SET_PASSWORD' : 'RESET_PASSWORD'
+    const { link } = await createPasswordToken(user.id, tokenType)
+    await writeAuditLog({
+      userId: admin.id,
+      action: tokenType === 'SET_PASSWORD' ? 'access.setup_link.regenerated' : 'access.reset_link.generated',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: requestIp(request),
+    })
+
+    return reply.send({
+      success: true,
+      setupLink: link,
+      message: tokenType === 'SET_PASSWORD' ? 'New setup link generated.' : 'Password reset link generated.',
+    })
+  })
+
+  app.patch('/api/admin/users/:id', async (request, reply) => {
+    const admin = await requireAdmin(request, reply)
+    if (!admin) return
+
+    const params = request.params as { id: string }
+    const parsed = updateUserSchema.safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, 'Invalid user update payload', parsed.error.flatten())
+
+    const user = await prisma.user.findUnique({ where: { id: params.id } })
+    if (!user) return notFound(reply, 'User not found')
+    if (user.id === admin.id && parsed.data.role && parsed.data.role !== 'ADMIN') return badRequest(reply, 'You cannot remove your own admin role.')
+
+    const nextRole = parsed.data.role ?? user.role
+    const nextStatus = parsed.data.status ?? user.status
+    const nextIsActive = nextStatus !== 'DISABLED'
+    const removingAdminPower = user.role === 'ADMIN' && (nextRole !== 'ADMIN' || !nextIsActive)
+    if (removingAdminPower && await activeAdminCount() <= 1) {
+      return badRequest(reply, 'The last remaining admin cannot be disabled or downgraded.')
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        role: nextRole,
+        status: nextStatus,
+        isActive: nextIsActive,
+        approvedAt: nextStatus === 'ACTIVE' || nextStatus === 'APPROVED_NEEDS_PASSWORD' ? user.approvedAt ?? new Date() : user.approvedAt,
+        rejectedAt: nextStatus === 'REJECTED' ? new Date() : null,
+      },
+    })
+
+    await writeAuditLog({
+      userId: admin.id,
+      action: 'user.updated',
+      entityType: 'User',
+      entityId: updated.id,
+      beforeJson: { role: user.role, status: user.status, isActive: user.isActive },
+      afterJson: { role: updated.role, status: updated.status, isActive: updated.isActive },
+      ipAddress: requestIp(request),
+    })
+
+    return reply.send({ success: true, user: updated })
   })
 }

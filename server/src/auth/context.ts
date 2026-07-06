@@ -15,7 +15,7 @@ export async function getCurrentUser(request: FastifyRequest) {
   try {
     const payload = await req.jwtVerify<{ sub: string }>()
     const user = await prisma.user.findUnique({ where: { id: payload.sub } })
-    if (!user || !user.isActive) return null
+    if (!user || !user.isActive || user.status !== 'ACTIVE') return null
     return toSafeUser(user)
   } catch {
     return null
