@@ -6,6 +6,7 @@ import { clearAuthCookie, setAuthCookie } from '../utils/session.js'
 import { toSafeUser } from '../utils/safeUser.js'
 import { consumePasswordToken, createPasswordToken } from '../services/passwordTokens.js'
 import { requestIp, writeAuditLog } from '../services/audit.js'
+import { getCurrentUserWithReason, roleChangedReloginCode } from '../auth/context.js'
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -43,7 +44,7 @@ export async function authRoutes(app: FastifyInstance) {
     if (!ok) return reply.code(401).send({ message: 'Invalid email or password' })
 
     const updated = await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-    const token = await reply.jwtSign({ sub: updated.id }, { sign: { expiresIn: '7d' } })
+    const token = await reply.jwtSign({ sub: updated.id, pv: updated.permissionVersion }, { sign: { expiresIn: '7d' } })
     setAuthCookie(reply, token)
     return reply.send({ user: toSafeUser(updated) })
   })
@@ -54,15 +55,16 @@ export async function authRoutes(app: FastifyInstance) {
   })
 
   app.get('/api/auth/me', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request, reply) => {
-    try {
-      if (!request.cookies.crew_chart_session) return reply.code(401).send({ message: 'Not authenticated' })
-      const payload = await request.jwtVerify<{ sub: string }>()
-      const user = await prisma.user.findUnique({ where: { id: payload.sub } })
-      if (!user || !user.isActive || user.status !== 'ACTIVE') return reply.code(401).send({ message: 'Not authenticated' })
-      return reply.send({ user: toSafeUser(user) })
-    } catch {
+    const result = await getCurrentUserWithReason(request)
+    if (!result.user) {
+      if (result.reason === roleChangedReloginCode) {
+        return reply.code(401).send({ code: roleChangedReloginCode, message: 'Your access was updated. Please sign in again.' })
+      }
       return reply.code(401).send({ message: 'Not authenticated' })
     }
+    const user = await prisma.user.findUnique({ where: { id: result.user.id } })
+    if (!user) return reply.code(401).send({ message: 'Not authenticated' })
+    return reply.send({ user: toSafeUser(user) })
   })
 
   app.post('/api/auth/set-password', { config: { rateLimit: { max: 8, timeWindow: '1 minute' } } }, async (request, reply) => {

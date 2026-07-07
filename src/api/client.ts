@@ -12,6 +12,7 @@ function bumpFreshDataEpoch() {
 }
 
 type ApiErrorBody = { message?: string; details?: unknown }
+type AuthInvalidationDetail = { message: string }
 
 export class ApiError extends Error {
   status: number
@@ -21,6 +22,11 @@ export class ApiError extends Error {
     this.status = status
     this.details = details
   }
+}
+
+function notifyAuthInvalidation(message: string) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent<AuthInvalidationDetail>('crew-auth-invalidated', { detail: { message } }))
 }
 
 function buildApiUrl(path: string) {
@@ -61,14 +67,16 @@ async function request<T>(path: string, init: RequestOptions = {}) {
     const contentType = response.headers.get('content-type') || ''
     const payload = contentType.includes('application/json') ? await response.json().catch(() => null) : null
     if (!response.ok) {
-      const body = (payload || {}) as ApiErrorBody
+      const body = (payload || {}) as ApiErrorBody & { code?: string }
       const message = body.message
-        || (response.status === 401 ? 'Session expired. Please log in again.'
+        || (response.status === 401 && body.code === 'ROLE_CHANGED_RELOGIN_REQUIRED' ? 'Your access was updated. Please sign in again.'
+          : response.status === 401 ? 'Session expired. Please log in again.'
           : response.status === 403 ? 'You do not have permission to perform this action.'
           : response.status === 422 ? 'The server rejected part of the submitted data.'
           : response.status === 429 ? 'Too many actions in a short time. Please wait a few seconds and try again.'
           : response.status >= 500 ? 'Could not connect to server.'
           : `Request failed (${response.status})`)
+      if (response.status === 401 && body.code === 'ROLE_CHANGED_RELOGIN_REQUIRED') notifyAuthInvalidation(message)
       throw new ApiError(response.status, message, body.details)
     }
     return (payload ?? ({} as T)) as T

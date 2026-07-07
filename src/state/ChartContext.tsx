@@ -62,8 +62,6 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   const syncingRef = useRef(false)
   const editVersionRef = useRef(0)
   const loadRequestRef = useRef(0)
-  const focusRefreshTimeoutRef = useRef<number | null>(null)
-  const backgroundRefreshIntervalRef = useRef<number | null>(null)
 
   const dispatch = useCallback((action: ChartAction) => {
     if (action.type !== 'replace') {
@@ -77,7 +75,12 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   const loadFromServer = useCallback(async (fresh = false) => {
     const requestId = ++loadRequestRef.current
     const editVersionAtStart = editVersionRef.current
-    setLoadState('loading')
+    const isInitialLoad = !snapshotRef.current
+    if (isInitialLoad) {
+      setLoadState('loading')
+    } else {
+      setSyncNotice('Refreshing…')
+    }
     setErrorMessage('')
     try {
       if (fresh) apiClient.clearGetRequestCache()
@@ -86,13 +89,14 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       if (!organizationIdRef.current) {
         const emptyState = createEmptyChartData()
         if (requestId !== loadRequestRef.current || editVersionRef.current !== editVersionAtStart) {
-          setLoadState('ready')
+          if (isInitialLoad) setLoadState('ready')
           return
         }
         snapshotRef.current = emptyState
         dispatch({ type: 'replace', data: emptyState })
         setLoadState('ready')
         setSaveState('saved')
+        setSyncNotice('')
         return
       }
 
@@ -113,7 +117,7 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       }
 
       if (requestId !== loadRequestRef.current || editVersionRef.current !== editVersionAtStart) {
-        setLoadState('ready')
+        if (isInitialLoad) setLoadState('ready')
         return
       }
 
@@ -121,10 +125,11 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'replace', data: chartData })
       setLoadState('ready')
       setSaveState('saved')
-      setSyncNotice('')
+      setSyncNotice(isInitialLoad ? '' : 'Synced just now')
     } catch (error) {
-      setLoadState('error')
+      setLoadState(isInitialLoad ? 'error' : 'ready')
       setSaveState('error')
+      setSyncNotice('')
       setErrorMessage(normalizeApiError(error, 'Failed to load chart data'))
     }
   }, [dispatch])
@@ -305,42 +310,6 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   }, [loadFromServer])
 
   const hasUnsavedChanges = useMemo(() => !(snapshotRef.current && equalJson(snapshotRef.current, data)), [data])
-
-  useEffect(() => {
-    const refreshIfClean = () => {
-      if (focusRefreshTimeoutRef.current) window.clearTimeout(focusRefreshTimeoutRef.current)
-      focusRefreshTimeoutRef.current = window.setTimeout(() => {
-        if (hasUnsavedChanges) {
-          setSyncNotice('New database changes may be available. Save or discard your edits before refreshing.')
-          return
-        }
-        if (!syncingRef.current && loadState === 'ready') void loadFromServer(true)
-      }, 3500)
-    }
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') refreshIfClean()
-    }
-
-    if (backgroundRefreshIntervalRef.current) {
-      window.clearInterval(backgroundRefreshIntervalRef.current)
-      backgroundRefreshIntervalRef.current = null
-    }
-
-    backgroundRefreshIntervalRef.current = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return
-      if (hasUnsavedChanges || syncingRef.current || loadState !== 'ready') return
-      void loadFromServer(true)
-    }, 12000)
-
-    window.addEventListener('focus', refreshIfClean)
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    return () => {
-      if (focusRefreshTimeoutRef.current) window.clearTimeout(focusRefreshTimeoutRef.current)
-      if (backgroundRefreshIntervalRef.current) window.clearInterval(backgroundRefreshIntervalRef.current)
-      window.removeEventListener('focus', refreshIfClean)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-    }
-  }, [hasUnsavedChanges, loadFromServer, loadState])
 
   const saveChanges = useCallback(async () => {
     if (loadState !== 'ready' || syncingRef.current) return

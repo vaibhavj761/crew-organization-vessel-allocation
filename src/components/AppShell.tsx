@@ -1,8 +1,9 @@
-import { Check, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME, getPageTitle } from '../constants/app'
 import { useChart } from '../state/ChartContext'
 import type { SafeUser, ViewMode } from '../types'
+import { canExport, isReadOnly } from '../utils/permissions'
 import { AccessDeniedPage } from './AccessDeniedPage'
 import { AdminAccessRequests } from './AdminAccessRequests'
 import { AuthShell } from './AuthShell'
@@ -37,7 +38,9 @@ export function AppShell({
   const [selectedOps, setSelectedOps] = useState('')
   const [selectedDirector, setSelectedDirector] = useState('')
   const [selectedCrewManager, setSelectedCrewManager] = useState('')
-  const refreshedViewRef = useRef<ViewMode | ''>('')
+  const showEditorSidebar = canEdit && editorOpen && viewMode !== 'access'
+  const readOnly = isReadOnly(user)
+  const allowExport = canExport(user)
 
   const operationsManagersForDirector = useMemo(
     () => (selectedDirector
@@ -81,10 +84,6 @@ export function AppShell({
   }, [selectedCrewManager, selectedCrewManagers])
 
   useEffect(() => {
-    refreshedViewRef.current = ''
-  }, [hasUnsavedChanges])
-
-  useEffect(() => {
     onUnsavedChangesChange?.(hasUnsavedChanges)
   }, [hasUnsavedChanges, onUnsavedChangesChange])
 
@@ -102,13 +101,25 @@ export function AppShell({
     document.title = getPageTitle(viewMode)
   }, [viewMode])
 
-  useEffect(() => {
-    if (viewMode === 'access') return
-    if (loadState !== 'ready' || hasUnsavedChanges) return
-    if (refreshedViewRef.current === viewMode) return
-    refreshedViewRef.current = viewMode
-    void reloadFromServer(true)
-  }, [viewMode, loadState, hasUnsavedChanges, reloadFromServer])
+  const confirmDiscardChanges = () => {
+    if (!hasUnsavedChanges) return true
+    return window.confirm('You have unsaved changes. Refreshing or leaving this page will discard them. Continue?')
+  }
+
+  const refreshPageData = async () => {
+    if (loadState !== 'ready') return
+    if (!confirmDiscardChanges()) return
+    await reloadFromServer(true)
+  }
+
+  const handleViewModeChange = (nextView: ViewMode) => {
+    if (nextView === viewMode) return
+    if (!confirmDiscardChanges()) return
+    onViewModeChange(nextView)
+    if (nextView !== 'access' && loadState === 'ready') {
+      void reloadFromServer(true)
+    }
+  }
 
   const modes: [ViewMode, string][] = [
     ['dashboard', 'Dashboard'],
@@ -119,7 +130,7 @@ export function AppShell({
   if (canAdmin) modes.push(['access', 'Access management'])
 
   return (
-    <div className={`app-shell ${editorOpen ? '' : 'editor-collapsed'} ${canEdit ? '' : 'read-only'}`}>
+    <div className={`app-shell ${showEditorSidebar ? '' : 'editor-collapsed workspace-full'} ${canEdit ? '' : 'read-only'}`}>
       <header className="app-header">
         <div className="brand">
           <span className="brand-mark">CO</span>
@@ -130,23 +141,36 @@ export function AppShell({
         </div>
         <div className="view-switcher">
           {modes.map(([m, l]) => (
-            <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => onViewModeChange(m)}>
+            <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => handleViewModeChange(m)}>
               {l}
             </button>
           ))}
         </div>
         <div className="header-actions">
           <AuthShell user={user} onLogout={onLogout} onRefresh={onRefresh} />
+          {viewMode !== 'access' && (
+            <button className="button secondary" onClick={() => void refreshPageData()} disabled={loadState !== 'ready' || saveState === 'saving'}>
+              <RefreshCw size={14} />
+              Refresh
+            </button>
+          )}
           {canEdit && viewMode !== 'access' && <button className="button" onClick={() => void saveChanges()} disabled={loadState !== 'ready' || saveState === 'saving' || !hasUnsavedChanges}>{saveState === 'saving' ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Saved'}</button>}
-          <span className={`save-state ${saveState === 'error' ? 'save-error' : ''}`} title={errorMessage || undefined}>
-            <Check size={14} />
-            {saveState === 'saved' ? (hasUnsavedChanges ? 'Unsaved changes' : 'Saved to database') : saveState === 'saving' ? 'Saving…' : errorMessage || 'Could not sync'}
-          </span>
-          {(viewMode === 'overview' || viewMode === 'operations') && <ExportToolbar viewMode={viewMode} selectedOperationsManagerId={selectedOps} selectedCrewDirectorId={selectedDirector} selectedCrewManagerId={selectedCrewManager} />}
+          {canEdit ? (
+            <span className={`save-state ${saveState === 'error' ? 'save-error' : ''}`} title={errorMessage || undefined}>
+              <Check size={14} />
+              {saveState === 'saved' ? (hasUnsavedChanges ? 'Unsaved changes' : 'Saved to database') : saveState === 'saving' ? 'Saving…' : errorMessage || 'Could not sync'}
+            </span>
+          ) : (
+            <span className="save-state read-only-state">
+              <Check size={14} />
+              {syncNotice || 'Read-only view'}
+            </span>
+          )}
+          {allowExport && (viewMode === 'overview' || viewMode === 'operations') && <ExportToolbar viewMode={viewMode} selectedOperationsManagerId={selectedOps} selectedCrewDirectorId={selectedDirector} selectedCrewManagerId={selectedCrewManager} />}
         </div>
       </header>
       <main className="workspace">
-        {canEdit && editorOpen && viewMode !== 'access' && <EditorPanel selectedDirectorId={selectedDirector} selectedOperationsManagerId={selectedOps} selectedCrewManagerId={selectedCrewManager} />}
+        {showEditorSidebar && <EditorPanel selectedDirectorId={selectedDirector} selectedOperationsManagerId={selectedOps} selectedCrewManagerId={selectedCrewManager} />}
         <section className="canvas-workspace">
           {loadState === 'loading' && <div className="page-loading-banner">Loading latest database data…</div>}
           {syncNotice && <div className="page-loading-banner notice">{syncNotice}</div>}
@@ -219,7 +243,7 @@ export function AppShell({
                 <small>Live vessel database view</small>
               </label>
             )}
-            {!canEdit && <span className="read-only-pill">Read-only access</span>}
+            {readOnly && <span className="read-only-pill">Read-only access</span>}
             <span className="zoom-label">{viewMode === 'dashboard' ? 'Connected workspace' : viewMode === 'access' ? 'Administrator workspace' : '16:9 presentation preview'}</span>
           </div>
           {viewMode === 'dashboard' ? (

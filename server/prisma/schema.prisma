@@ -59,6 +59,7 @@ model User {
   approvedAt           DateTime?
   rejectedAt           DateTime?
   lastLoginAt          DateTime?
+  permissionVersion    Int             @default(1)
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 

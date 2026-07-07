@@ -80,28 +80,6 @@ export function AdminAccessRequests() {
     void load(true)
   }, [load])
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      void load(true)
-    }, 15000)
-
-    const onFocus = () => {
-      void load(true)
-    }
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void load(true)
-    }
-
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    return () => {
-      window.clearInterval(interval)
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-    }
-  }, [busyId, load])
-
   const grouped = useMemo(() => ({
     pending: users.filter((item) => item.status === 'PENDING_APPROVAL'),
     approved: users.filter((item) => item.status === 'APPROVED_NEEDS_PASSWORD'),

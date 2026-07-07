@@ -9,6 +9,7 @@ import { RequestAccessPage } from './components/RequestAccessPage'
 import { ForgotPasswordPage } from './components/ForgotPasswordPage'
 import { SetPasswordPage } from './components/SetPasswordPage'
 import { ChartProvider } from './state/ChartContext'
+import { canEditChart, canManageAccess } from './utils/permissions'
 
 const publicRoutes = new Set(['/request-access', '/forgot-password', '/set-password', '/reset-password'])
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000
@@ -93,6 +94,9 @@ export default function App() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setUser(null)
+        if (error.message && error.message !== 'Not authenticated') {
+          setLoginNotice(error.message)
+        }
       } else {
         setAuthError(error instanceof Error ? error.message : 'Unable to reach the server')
       }
@@ -103,6 +107,20 @@ export default function App() {
 
   useEffect(() => {
     void loadMe()
+  }, [])
+
+  useEffect(() => {
+    const handleAuthInvalidated = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail
+      setUser(null)
+      setHasUnsavedChanges(false)
+      setShowInactivityWarning(false)
+      setLoginNotice(detail?.message || 'Your session expired. Please sign in again.')
+      navigate('/', true)
+    }
+
+    window.addEventListener('crew-auth-invalidated', handleAuthInvalidated as EventListener)
+    return () => window.removeEventListener('crew-auth-invalidated', handleAuthInvalidated as EventListener)
   }, [])
 
   useEffect(() => {
@@ -172,8 +190,8 @@ export default function App() {
     return <LoginPage notice={loginNotice} onLogin={(nextUser) => { setUser(nextUser); setLoginNotice(''); navigate(publicRoutes.has(pathname) ? '/' : pathname || '/', true) }} onRequestAccess={() => navigate('/request-access')} onForgotPassword={() => navigate('/forgot-password')} />
   }
 
-  const canEdit = user.role === 'ADMIN' || user.role === 'EDITOR'
-  const canAdmin = user.role === 'ADMIN'
+  const canEdit = canEditChart(user)
+  const canAdmin = canManageAccess(user)
 
   return (
     <>

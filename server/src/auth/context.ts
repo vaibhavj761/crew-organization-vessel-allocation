@@ -4,31 +4,57 @@ import { prisma } from '../db/prisma.js'
 import { toSafeUser } from '../utils/safeUser.js'
 
 export const authCookieName = 'crew_chart_session'
+export const roleChangedReloginCode = 'ROLE_CHANGED_RELOGIN_REQUIRED'
 
-export async function getCurrentUser(request: FastifyRequest) {
+type SessionPayload = {
+  sub: string
+  pv: number
+}
+
+type SessionResolveResult =
+  | { user: Awaited<ReturnType<typeof toSafeUser>>; reason: null }
+  | { user: null; reason: 'NOT_AUTHENTICATED' | typeof roleChangedReloginCode }
+
+async function verifySession(request: FastifyRequest): Promise<SessionResolveResult> {
   const req = request as FastifyRequest & {
     cookies: Record<string, string | undefined>
     jwtVerify: <T>() => Promise<T>
   }
   const token = req.cookies[authCookieName]
-  if (!token) return null
+  if (!token) return { user: null, reason: 'NOT_AUTHENTICATED' }
+
   try {
-    const payload = await req.jwtVerify<{ sub: string }>()
+    const payload = await req.jwtVerify<SessionPayload>()
     const user = await prisma.user.findUnique({ where: { id: payload.sub } })
-    if (!user || !user.isActive || user.status !== 'ACTIVE') return null
-    return toSafeUser(user)
+    if (!user) return { user: null, reason: 'NOT_AUTHENTICATED' }
+    if (user.permissionVersion !== payload.pv) return { user: null, reason: roleChangedReloginCode }
+    if (!user.isActive || user.status !== 'ACTIVE') return { user: null, reason: roleChangedReloginCode }
+    return { user: toSafeUser(user), reason: null }
   } catch {
-    return null
+    return { user: null, reason: 'NOT_AUTHENTICATED' }
   }
 }
 
+export async function getCurrentUser(request: FastifyRequest) {
+  const result = await verifySession(request)
+  return result.user
+}
+
+export async function getCurrentUserWithReason(request: FastifyRequest) {
+  return verifySession(request)
+}
+
 export async function requireCurrentUser(request: FastifyRequest, reply: FastifyReply) {
-  const user = await getCurrentUser(request)
-  if (!user) {
+  const result = await verifySession(request)
+  if (!result.user) {
+    if (result.reason === roleChangedReloginCode) {
+      reply.code(401).send({ code: roleChangedReloginCode, message: 'Your access was updated. Please sign in again.' })
+      return null
+    }
     reply.code(401).send({ message: 'Not authenticated' })
     return null
   }
-  return user
+  return result.user
 }
 
 export function canWrite(role: Role) {

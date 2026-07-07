@@ -120,6 +120,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
       data: {
         role: parsed.data.role,
         status: 'APPROVED_NEEDS_PASSWORD',
+        permissionVersion: { increment: 1 },
         approvedByUserId: admin.id,
         approvedAt: new Date(),
         rejectedAt: null,
@@ -155,6 +156,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
       where: { id: user.id },
       data: {
         status: 'REJECTED',
+        permissionVersion: { increment: 1 },
         rejectedAt: new Date(),
       },
     })
@@ -213,6 +215,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     const nextRole = parsed.data.role ?? user.role
     const nextStatus = parsed.data.status ?? user.status
     const nextIsActive = nextStatus !== 'DISABLED'
+    const permissionChanged = nextRole !== user.role || nextStatus !== user.status || nextIsActive !== user.isActive
     const removingAdminPower = user.role === 'ADMIN' && (nextRole !== 'ADMIN' || !nextIsActive)
     if (removingAdminPower && await activeAdminCount() <= 1) {
       return badRequest(reply, 'The last remaining admin cannot be disabled or downgraded.')
@@ -224,6 +227,7 @@ export async function accessRequestRoutes(app: FastifyInstance) {
         role: nextRole,
         status: nextStatus,
         isActive: nextIsActive,
+        permissionVersion: permissionChanged ? { increment: 1 } : undefined,
         approvedAt: nextStatus === 'ACTIVE' || nextStatus === 'APPROVED_NEEDS_PASSWORD' ? user.approvedAt ?? new Date() : user.approvedAt,
         rejectedAt: nextStatus === 'REJECTED' ? new Date() : null,
       },
