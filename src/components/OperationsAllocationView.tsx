@@ -35,6 +35,10 @@ export function OperationsAllocationView({
     () => getCrewManagersForOperationsManager(operationsManager, crewManagerId),
     [crewManagerId, operationsManager],
   )
+  const visibleVesselCount = useMemo(
+    () => visibleCrewManagers.reduce((total, team) => total + data.vessels.filter((item) => item.crewManagerId === team.id || item.crewManagerId === team.person.id).length, 0),
+    [data.vessels, visibleCrewManagers],
+  )
 
   if (!crewDirectorId) {
     return (
@@ -110,18 +114,21 @@ export function OperationsAllocationView({
 
       <div className="leadership-stack operations-focus-stack">
         {director ? <PersonCard person={director.person} level="head" /> : null}
-        <div className="connector" />
+        <div className="connector leadership-connector" />
         <PersonCard person={operationsManager.person} level="operations" />
-        <div className="connector branch" />
+        <div className={`hierarchy-beam beam-count-${Math.min(Math.max(visibleCrewManagers.length, 1), 4)}`}>
+          <span className="hierarchy-beam__vertical" />
+          {visibleCrewManagers.length > 1 ? <span className="hierarchy-beam__horizontal" /> : null}
+        </div>
       </div>
 
       <div className="operations-focus-summary">
         <span><strong>Crew Director</strong>{director?.person.name || 'Not selected'}</span>
         <span><strong>Crew Operations Manager</strong>{operationsManager.person.name}</span>
-        <span><strong>Crew Managers</strong>{visibleCrewManagers.length}</span>
+        <span><strong>Crew Managers</strong>{visibleCrewManagers.length} · {visibleVesselCount} vessels</span>
       </div>
 
-      <div className="team-grid operations-focus-grid">
+      <div className={`team-grid operations-focus-grid manager-count-${Math.min(Math.max(visibleCrewManagers.length, 1), 4)}`}>
         {visibleCrewManagers.length ? visibleCrewManagers.map((team) => (
           <TeamCard
             key={team.id}
@@ -139,7 +146,7 @@ export function OperationsAllocationView({
 
       <footer className="chart-footer">
         <span>{data.footerText}</span>
-        <span>{visibleCrewManagers.reduce((total, team) => total + data.vessels.filter((item) => item.crewManagerId === team.id || item.crewManagerId === team.person.id).length, 0)} vessel names shown</span>
+        <span>{visibleVesselCount} vessel names shown</span>
       </footer>
     </div>
   )

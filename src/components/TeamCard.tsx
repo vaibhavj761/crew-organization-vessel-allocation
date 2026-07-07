@@ -20,10 +20,10 @@ export function TeamCard({
   const vesselColumns = vesselNamesOnly ? getVesselColumnCount(vessels.length) : allocation ? 2 : 1
 
   return (
-    <article className={`team-card ${allocation ? 'allocation-card' : ''} ${vesselNamesOnly ? 'names-only-card' : ''}`}>
+    <article className={`team-card ${allocation ? 'allocation-card' : ''} ${vesselNamesOnly ? 'names-only-card' : ''} assistants-${Math.min(team.assistants.length || 1, 3)}`}>
       <header className="team-header">
         <div className="manager-avatar">{team.person.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase()}</div>
-        <div>
+        <div className="team-header-copy">
           <h3>{team.person.name || 'Unnamed manager'}</h3>
           <p className="team-designation">{team.person.designation || 'Designation not set'}</p>
         </div>
