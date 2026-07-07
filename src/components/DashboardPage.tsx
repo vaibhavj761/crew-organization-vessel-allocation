@@ -11,7 +11,7 @@ export function DashboardPage() {
       <div className="master-heading">
         <div>
           <h2>Dashboard</h2>
-          <p>Current organization, hierarchy, and vessel allocation snapshot from the database.</p>
+          <p>Current Crew Operations Organization Chart snapshot from the database.</p>
         </div>
       </div>
 
@@ -25,7 +25,7 @@ export function DashboardPage() {
 
       <div className="admin-link-panel">
         <strong>Presentation readiness</strong>
-        <p>Use Organization Chart for leadership overview, Operations Detail for team pages, and Vessel Allocation for dense vessel presentation exports.</p>
+        <p>Use Organization Chart for leadership overview and Operations & Vessel Allocation for focused team pages and vessel-name presentation exports.</p>
       </div>
     </div>
   )

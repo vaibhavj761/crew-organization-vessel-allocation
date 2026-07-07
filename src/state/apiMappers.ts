@@ -92,7 +92,7 @@ export function mapOrganizationResponseToChartState(response: RawOrganizationRes
     ? (response.organization || {})
     : (response || {}) as OrganizationFields
   return {
-    title: organization.title || 'Crew Organization and Vessel Allocation Planner',
+    title: organization.title || 'Crew Operations Organization Chart',
     organizationName: organization.name || 'Organization',
     effectiveDate: organization.effectiveDate ? String(organization.effectiveDate).slice(0, 10) : '',
     footerText: organization.footerText || '',

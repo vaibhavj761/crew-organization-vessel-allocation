@@ -3,7 +3,7 @@ import type { ChartData } from '../types'
 export function createEmptyChartData(): ChartData {
   return {
     schemaVersion: 2,
-    title: 'Crew Organization and Vessel Allocation Planner',
+    title: 'Crew Operations Organization Chart',
     organizationName: '',
     effectiveDate: '',
     crewDirectors: [],

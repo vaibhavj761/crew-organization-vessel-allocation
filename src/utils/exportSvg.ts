@@ -1,13 +1,309 @@
-import type{ChartData,CrewManagerNode,ViewMode}from'../types'
-export type ExportTarget={kind:'full'}|{kind:'director';directorId:string}|{kind:'operations';operationsManagerId:string}
-const esc=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!));const clip=(s:string,n:number)=>s.length>n?s.slice(0,n-1)+'…':s
-const text=(x:number,y:number,s:string,z=12,w=400,c='#172b3f',a='start')=>`<text x="${x}" y="${y}" font-family="Arial,Helvetica,sans-serif" font-size="${z}" font-weight="${w}" fill="${c}" text-anchor="${a}">${esc(s)}</text>`
-function header(d:ChartData,title:string,subtitle:string){const date=d.effectiveDate?new Date(d.effectiveDate+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'Not specified';return `<rect width="1600" height="900" fill="#f7f9fb"/><rect width="1600" height="7" fill="#0b2447"/><rect x="64" y="28" width="6" height="54" rx="3" fill="#4e83a6"/>${text(84,44,(d.organizationName||'Organization name').toUpperCase(),10,700,'#4e83a6')}${text(84,76,title,28,700,'#102a43')}${text(84,94,subtitle,10,500,'#6a7e8f')}<rect x="1354" y="35" width="182" height="43" rx="6" fill="#f1f5f7" stroke="#d7e0e7"/>${text(1445,51,'EFFECTIVE DATE',8,700,'#688094','middle')}${text(1445,69,date,12,700,'#24465f','middle')}<line x1="64" y1="103" x2="1536" y2="103" stroke="#d7e0e7"/>`}
-function card(d:ChartData,cm:CrewManagerNode,x:number,y:number,w:number,h:number,detail:boolean){const vs=d.vessels.filter(v=>v.crewManagerId===cm.id||v.crewManagerId===cm.person.id),max=Math.max(1,Math.floor((h-166)/36));let s=`<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="9" fill="#fff" stroke="#cbd6df"/><rect x="${x}" y="${y}" width="${w}" height="5" rx="2" fill="#24465f"/><rect x="${x}" y="${y+5}" width="${w}" height="58" fill="#f3f6f8"/>${text(x+18,y+25,'CREW MANAGER',8,700,'#4e83a6')}${text(x+18,y+45,clip(cm.person.name,30),15,700,'#17344c')}${text(x+18,y+58,clip(cm.person.designation||'Designation not set',38),9,400,'#6a7e8f')}${text(x+18,y+85,`SUPPORT TEAM · ${cm.assistants.length}`,8,700,'#516b80')}${text(x+18,y+103,clip(cm.assistants.map(a=>a.name).join('  ·  ')||'No assistants',55),9,500,'#31526b')}<line x1="${x+18}" y1="${y+116}" x2="${x+w-18}" y2="${y+116}" stroke="#e1e7ec"/>${text(x+18,y+137,`VESSEL ALLOCATION · ${vs.length}`,8,700,'#516b80')}`;vs.slice(0,max).forEach((v,i)=>{const yy=y+148+i*36;s+=`<rect x="${x+18}" y="${yy}" width="${w-36}" height="31" rx="4" fill="#f8fafb" stroke="#e1e7ec"/>${text(x+30,yy+14,clip(v.name,detail?30:24),10,700,'#17344c')}${text(x+30,yy+25,clip(detail?[v.vesselType,v.vesselDoc,v.ownerPool].filter(Boolean).join(' · '):v.vesselType,50),7,400,'#6a7e8f')}`});if(vs.length>max)s+=text(x+w-18,y+h-10,`${vs.length-max} MORE VESSELS • DETAIL VIEW`,7,700,'#4e83a6','end');return s+'</g>'}
-function grid(d:ChartData,cms:CrewManagerNode[],y:number,detail:boolean){if(!cms.length)return text(800,450,'No Crew Managers configured',16,600,'#6a7e8f','middle');const cols=Math.min(detail?3:4,cms.length),rows=Math.ceil(cms.length/cols),gap=18,w=(1472-gap*(cols-1))/cols,h=(842-y-gap*(rows-1))/rows;return cms.map((cm,i)=>card(d,cm,64+(i%cols)*(w+gap),y+Math.floor(i/cols)*(h+gap),w,h,detail)).join('')}
-function footer(d:ChartData){return `<line x1="64" y1="866" x2="1536" y2="866" stroke="#d7e0e7"/>${text(64,886,d.footerText,8,400,'#738697')}${text(1536,886,`${d.vessels.length} VESSELS`,8,700,'#738697','end')}`}
-export function generateExportSvg(d:ChartData,target:ExportTarget){const op=target.kind==='operations'?d.operationsManagers.find(x=>x.id===target.operationsManagerId):d.operationsManagers[0];const director=target.kind==='director'?d.crewDirectors.find(x=>x.id===target.directorId):target.kind==='operations'&&op?d.crewDirectors.find(x=>x.id===op.crewDirectorId):d.crewDirectors[0];let b='';if(target.kind==='full'){b=header(d,d.title,'Organization overview');const groups=d.crewDirectors,gw=(1472-18*(Math.max(1,groups.length)-1))/Math.max(1,groups.length);groups.forEach((dir,i)=>{const x=64+i*(gw+18);b+=`<rect x="${x}" y="118" width="${gw}" height="58" rx="8" fill="#0b2447"/>${text(x+18,138,'CREW DIRECTOR',8,700,'#8eb7d1')}${text(x+18,160,clip(dir.person.name,32),16,700,'#fff')}`;const ops=d.operationsManagers.filter(opx=>opx.crewDirectorId===dir.id);if(!ops.length){b+=`<rect x="${x}" y="194" width="${gw}" height="66" rx="8" fill="#ffffff" stroke="#d7e0e7"/>${text(x+18,228,'No operations managers assigned yet',11,500,'#6a7e8f')}`;return}const cmw=(gw-12*(Math.max(1,ops.length)-1))/Math.max(1,ops.length);ops.forEach((o,j)=>{const cardX=x+j*(cmw+12);b+=`<rect x="${cardX}" y="194" width="${cmw}" height="42" rx="6" fill="#eaf1f5"/>${text(cardX+14,211,'OPERATIONS MANAGER',7,700,'#4e83a6')}${text(cardX+14,227,clip(o.person.name,28),12,700,'#17344c')}`;const crew=o.crewManagers.slice(0,1);if(!crew.length){b+=`<rect x="${cardX}" y="246" width="${cmw}" height="84" rx="8" fill="#fff" stroke="#d7e0e7"/>${text(cardX+18,290,'No crew managers assigned yet',11,500,'#6a7e8f')}`;return}crew.forEach((cm,k)=>{b+=card(d,cm,cardX+k*(cmw+12),246,cmw,596,false)});if(o.crewManagers.length>crew.length){b+=text(cardX+cmw-18,854,`${o.crewManagers.length-crew.length} more team card(s) in detail view`,7,700,'#4e83a6','end')}})})}
-else if(target.kind==='director'){const selectedDirector=director||d.crewDirectors[0];const ops=d.operationsManagers.filter(item=>item.crewDirectorId===selectedDirector?.id);const cms=ops.flatMap(item=>item.crewManagers);b=header(d,`${selectedDirector?.person.name||'Crew Director'} · Team Overview`,'Selected crew director team export')+`<rect x="64" y="118" width="1472" height="52" rx="8" fill="#0b2447"/>${text(86,140,'CREW DIRECTOR',8,700,'#8eb7d1')}${text(86,160,clip(selectedDirector?.person.name||'Not selected',48),18,700,'#fff')}${text(1512,150,`${ops.length} OPERATIONS MANAGERS`,10,700,'#8eb7d1','end')}`+grid(d,cms,194,true)}
-else{const selectedOp=op||d.operationsManagers[0];const cms=(selectedOp?[selectedOp]:[]).flatMap(item=>item.crewManagers);b=header(d,`${selectedOp?.person.name||'Operations Manager'} · Team & Vessel Detail`,`Crew Director: ${director?.person.name||'Not selected'}`)+`<rect x="64" y="118" width="1472" height="42" rx="6" fill="#eaf1f5"/>${text(82,143,`Operations Manager: ${selectedOp?.person.name||'Not selected'}`,11,600,'#31526b')}`+grid(d,cms,178,true)}
-return `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">${b}${footer(d)}</svg>`}
-export function generateChartSvg(d:ChartData,m:ViewMode,opId=''){return generateExportSvg(d,m==='overview'?{kind:'full'}:m==='detail'?{kind:'operations',operationsManagerId:opId}:{kind:'operations',operationsManagerId:opId})}
+import { APP_NAME } from '../constants/app'
+import type { ChartData, CrewDirectorNode, CrewManagerNode, OperationsManagerNode, Vessel, ViewMode } from '../types'
+import { getCrewManagersForOperationsManager, getVesselColumnCount } from './operationsAllocation'
+
+export type ExportTarget =
+  | { kind: 'full' }
+  | { kind: 'director'; directorId: string }
+  | { kind: 'operations'; operationsManagerId: string }
+  | { kind: 'manager'; crewManagerId: string }
+
+const WIDTH = 1600
+const HEIGHT = 900
+const PAGE_MARGIN = 64
+const BODY_TOP = 188
+
+function escapeXml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&apos;',
+  }[character] || character))
+}
+
+function truncate(value: string, length: number) {
+  return value.length > length ? `${value.slice(0, length - 1)}…` : value
+}
+
+function svgText(x: number, y: number, value: string, fontSize = 12, weight: number | string = 500, color = '#172b3f', anchor: 'start' | 'middle' | 'end' = 'start') {
+  return `<text x="${x}" y="${y}" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="${fontSize}" font-weight="${weight}" fill="${color}" text-anchor="${anchor}">${escapeXml(value)}</text>`
+}
+
+function formatDate(value: string) {
+  if (!value) return 'Not specified'
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function resolveDirector(data: ChartData, target: ExportTarget) {
+  if (target.kind === 'director') return data.crewDirectors.find((item) => item.id === target.directorId) || null
+  if (target.kind === 'operations') {
+    const operationsManager = data.operationsManagers.find((item) => item.id === target.operationsManagerId)
+    return data.crewDirectors.find((item) => item.id === operationsManager?.crewDirectorId) || null
+  }
+  if (target.kind === 'manager') {
+    const operationsManager = data.operationsManagers.find((item) => item.crewManagers.some((crewManager) => crewManager.id === target.crewManagerId))
+    return data.crewDirectors.find((item) => item.id === operationsManager?.crewDirectorId) || null
+  }
+  return data.crewDirectors[0] || null
+}
+
+function resolveOperationsManager(data: ChartData, target: ExportTarget) {
+  if (target.kind === 'operations') return data.operationsManagers.find((item) => item.id === target.operationsManagerId) || null
+  if (target.kind === 'manager') {
+    return data.operationsManagers.find((item) => item.crewManagers.some((crewManager) => crewManager.id === target.crewManagerId)) || null
+  }
+  return null
+}
+
+function vesselsForCrewManager(data: ChartData, crewManager: CrewManagerNode) {
+  return data.vessels
+    .filter((item) => item.crewManagerId === crewManager.id || item.crewManagerId === crewManager.person.id)
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name))
+}
+
+function exportHeader(data: ChartData, title: string, subtitle: string) {
+  return [
+    `<rect width="${WIDTH}" height="${HEIGHT}" fill="#f7f9fb"/>`,
+    `<rect width="${WIDTH}" height="8" fill="#0b2447"/>`,
+    `<rect x="${PAGE_MARGIN}" y="30" width="6" height="52" rx="3" fill="#4e83a6"/>`,
+    svgText(PAGE_MARGIN + 20, 45, (data.organizationName || APP_NAME).toUpperCase(), 10, 700, '#4e83a6'),
+    svgText(PAGE_MARGIN + 20, 76, title, 28, 700, '#102a43'),
+    svgText(PAGE_MARGIN + 20, 96, subtitle, 11, 500, '#6a7e8f'),
+    `<rect x="${WIDTH - 246}" y="34" width="182" height="44" rx="6" fill="#f1f5f7" stroke="#d7e0e7"/>`,
+    svgText(WIDTH - 155, 51, 'EFFECTIVE DATE', 8, 700, '#688094', 'middle'),
+    svgText(WIDTH - 155, 69, formatDate(data.effectiveDate), 12, 700, '#24465f', 'middle'),
+    `<line x1="${PAGE_MARGIN}" y1="108" x2="${WIDTH - PAGE_MARGIN}" y2="108" stroke="#d7e0e7"/>`,
+  ].join('')
+}
+
+function personBanner(role: string, name: string, x: number, y: number, width: number, variant: 'director' | 'operations') {
+  if (variant === 'director') {
+    return [
+      `<rect x="${x}" y="${y}" width="${width}" height="58" rx="10" fill="#0b2447"/>`,
+      svgText(x + 18, y + 22, role.toUpperCase(), 8, 700, '#8eb7d1'),
+      svgText(x + 18, y + 42, truncate(name || 'Not selected', 42), 17, 700, '#ffffff'),
+    ].join('')
+  }
+
+  return [
+    `<rect x="${x}" y="${y}" width="${width}" height="50" rx="9" fill="#eaf1f5" stroke="#d7e0e7"/>`,
+    svgText(x + 18, y + 20, role.toUpperCase(), 8, 700, '#4e83a6'),
+    svgText(x + 18, y + 38, truncate(name || 'Not selected', 42), 15, 700, '#17344c'),
+  ].join('')
+}
+
+function vesselTag(vessel: Vessel, x: number, y: number, width: number) {
+  return [
+    `<rect x="${x}" y="${y}" width="${width}" height="28" rx="5" fill="#f8fafb" stroke="#e1e7ec"/>`,
+    svgText(x + 12, y + 18, truncate(vessel.name, 28), 9, 700, '#17344c'),
+  ].join('')
+}
+
+function teamCard(data: ChartData, crewManager: CrewManagerNode, x: number, y: number, width: number, height: number, vesselNamesOnly = true) {
+  const vessels = vesselsForCrewManager(data, crewManager)
+  const assistants = crewManager.assistants
+  const columnCount = vesselNamesOnly ? getVesselColumnCount(vessels.length) : 1
+  const vesselAreaWidth = width - 36
+  const vesselGap = 10
+  const columnWidth = columnCount === 1
+    ? vesselAreaWidth
+    : (vesselAreaWidth - vesselGap * (columnCount - 1)) / columnCount
+  const visibleRows = Math.max(1, Math.floor((height - 178) / 32))
+  const visibleCount = Math.min(vessels.length, visibleRows * columnCount)
+
+  let markup = [
+    `<g>`,
+    `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" fill="#ffffff" stroke="#ccd7df"/>`,
+    `<rect x="${x}" y="${y}" width="${width}" height="5" rx="3" fill="#24465f"/>`,
+    `<rect x="${x}" y="${y + 5}" width="${width}" height="58" fill="#f3f6f8"/>`,
+    svgText(x + 18, y + 24, 'CREW MANAGER', 8, 700, '#4e83a6'),
+    svgText(x + 18, y + 45, truncate(crewManager.person.name || 'Unnamed manager', 28), 15, 700, '#17344c'),
+    svgText(x + 18, y + 59, truncate(crewManager.person.designation || 'Designation not set', 36), 9, 500, '#6a7e8f'),
+    `<rect x="${x + width - 96}" y="${y + 20}" width="74" height="22" rx="11" fill="#e5edf2"/>`,
+    svgText(x + width - 59, y + 35, `${vessels.length} vessels`, 8, 700, '#31526b', 'middle'),
+    `<line x1="${x + 18}" y1="${y + 78}" x2="${x + width - 18}" y2="${y + 78}" stroke="#e1e7ec"/>`,
+    svgText(x + 18, y + 95, `SUPPORT TEAM · ${assistants.length}`, 8, 700, '#516b80'),
+  ].join('')
+
+  if (assistants.length) {
+    assistants.slice(0, 4).forEach((assistant, index) => {
+      const chipY = y + 106 + index * 18
+      markup += `<rect x="${x + 18}" y="${chipY}" width="${width - 36}" height="14" rx="7" fill="#f1f5f7" stroke="#e2e9ed"/>`
+      markup += svgText(x + 26, chipY + 10, truncate(`${assistant.name} · ${assistant.designation || 'Assistant'}`, 52), 8, 600, '#24465f')
+    })
+    if (assistants.length > 4) {
+      markup += svgText(x + width - 18, y + 177, `${assistants.length - 4} more assistants`, 7, 700, '#4e83a6', 'end')
+    }
+  } else {
+    markup += svgText(x + 18, y + 118, 'No assistants assigned yet', 8, 500, '#7b8d9b')
+  }
+
+  markup += `<line x1="${x + 18}" y1="${y + 184}" x2="${x + width - 18}" y2="${y + 184}" stroke="#e1e7ec"/>`
+  markup += svgText(x + 18, y + 201, vesselNamesOnly ? 'ALLOCATED VESSEL NAMES' : 'VESSEL ALLOCATION', 8, 700, '#516b80')
+
+  const visibleVessels = vessels.slice(0, visibleCount)
+  visibleVessels.forEach((vessel, index) => {
+    const columnIndex = Math.floor(index / visibleRows)
+    const rowIndex = index % visibleRows
+    const vesselX = x + 18 + columnIndex * (columnWidth + vesselGap)
+    const vesselY = y + 212 + rowIndex * 32
+    markup += vesselTag(vessel, vesselX, vesselY, columnWidth)
+  })
+
+  if (!visibleVessels.length) {
+    markup += svgText(x + 18, y + 228, 'No vessels assigned yet', 8, 500, '#7b8d9b')
+  }
+
+  if (vessels.length > visibleCount) {
+    markup += svgText(x + width - 18, y + height - 12, `${vessels.length - visibleCount} more vessels in detailed view`, 7, 700, '#4e83a6', 'end')
+  }
+
+  markup += '</g>'
+  return markup
+}
+
+function footer(data: ChartData, label = '') {
+  return [
+    `<line x1="${PAGE_MARGIN}" y1="866" x2="${WIDTH - PAGE_MARGIN}" y2="866" stroke="#d7e0e7"/>`,
+    svgText(PAGE_MARGIN, 886, data.footerText || 'Internal presentation', 8, 400, '#738697'),
+    svgText(WIDTH - PAGE_MARGIN, 886, label || `${data.vessels.length} vessels`, 8, 700, '#738697', 'end'),
+  ].join('')
+}
+
+function teamGrid(data: ChartData, crewManagers: CrewManagerNode[], top: number, fullWidth = false) {
+  if (!crewManagers.length) {
+    return svgText(WIDTH / 2, 450, 'No Crew Managers configured', 16, 600, '#6a7e8f', 'middle')
+  }
+
+  const columns = fullWidth ? Math.min(4, crewManagers.length) : Math.min(3, crewManagers.length)
+  const rows = Math.ceil(crewManagers.length / columns)
+  const gap = 18
+  const width = ((WIDTH - PAGE_MARGIN * 2) - gap * (columns - 1)) / columns
+  const height = Math.max(180, (842 - top - gap * (rows - 1)) / rows)
+
+  return crewManagers.map((crewManager, index) => {
+    const x = PAGE_MARGIN + (index % columns) * (width + gap)
+    const y = top + Math.floor(index / columns) * (height + gap)
+    return teamCard(data, crewManager, x, y, width, height, true)
+  }).join('')
+}
+
+function fullOverview(data: ChartData) {
+  let markup = exportHeader(data, data.title || APP_NAME, 'Organization overview')
+  const directors = data.crewDirectors
+
+  if (!directors.length) {
+    markup += svgText(WIDTH / 2, 450, 'No Crew Directors configured', 18, 600, '#6a7e8f', 'middle')
+    return markup + footer(data)
+  }
+
+  const gap = 18
+  const groupWidth = ((WIDTH - PAGE_MARGIN * 2) - gap * (directors.length - 1)) / directors.length
+
+  directors.forEach((director, directorIndex) => {
+    const x = PAGE_MARGIN + directorIndex * (groupWidth + gap)
+    const operationsManagers = data.operationsManagers.filter((item) => item.crewDirectorId === director.id)
+    markup += personBanner('Crew Director', director.person.name, x, 122, groupWidth, 'director')
+
+    if (!operationsManagers.length) {
+      markup += `<rect x="${x}" y="196" width="${groupWidth}" height="68" rx="8" fill="#ffffff" stroke="#d7e0e7"/>`
+      markup += svgText(x + 18, 234, 'No Crew Operations Managers assigned yet', 11, 500, '#6a7e8f')
+      return
+    }
+
+    const opGap = 12
+    const operationsWidth = (groupWidth - opGap * (operationsManagers.length - 1)) / operationsManagers.length
+    operationsManagers.forEach((operationsManager, operationsIndex) => {
+      const opX = x + operationsIndex * (operationsWidth + opGap)
+      markup += personBanner('Crew Operations Manager', operationsManager.person.name, opX, 196, operationsWidth, 'operations')
+
+      const featuredManager = operationsManager.crewManagers[0]
+      if (!featuredManager) {
+        markup += `<rect x="${opX}" y="256" width="${operationsWidth}" height="84" rx="8" fill="#fff" stroke="#d7e0e7"/>`
+        markup += svgText(opX + 18, 302, 'No Crew Managers assigned yet', 11, 500, '#6a7e8f')
+        return
+      }
+
+      markup += teamCard(data, featuredManager, opX, 252, operationsWidth, 604, true)
+      if (operationsManager.crewManagers.length > 1) {
+        markup += svgText(opX + operationsWidth - 18, 852, `${operationsManager.crewManagers.length - 1} more team card(s) in filtered view`, 7, 700, '#4e83a6', 'end')
+      }
+    })
+  })
+
+  return markup + footer(data, `${data.crewDirectors.length} Crew Directors · ${data.operationsManagers.length} Crew Operations Managers`)
+}
+
+function directorOverview(data: ChartData, director: CrewDirectorNode | null) {
+  const operationsManagers = data.operationsManagers.filter((item) => item.crewDirectorId === director?.id)
+  const crewManagers = operationsManagers.flatMap((item) => item.crewManagers)
+  return [
+    exportHeader(
+      data,
+      `${director?.person.name || 'Crew Director'} · Team Overview`,
+      'Filtered Crew Director team export',
+    ),
+    personBanner('Crew Director', director?.person.name || 'Not selected', PAGE_MARGIN, 122, WIDTH - PAGE_MARGIN * 2, 'director'),
+    teamGrid(data, crewManagers, BODY_TOP, true),
+    footer(data, `${operationsManagers.length} Crew Operations Managers · ${crewManagers.length} Crew Managers`),
+  ].join('')
+}
+
+function operationsOverview(data: ChartData, director: CrewDirectorNode | null, operationsManager: OperationsManagerNode | null) {
+  const crewManagers = getCrewManagersForOperationsManager(operationsManager || undefined)
+  return [
+    exportHeader(
+      data,
+      `${operationsManager?.person.name || 'Crew Operations Manager'} · Team Allocation`,
+      `Crew Director: ${director?.person.name || 'Not selected'}`,
+    ),
+    personBanner('Crew Director', director?.person.name || 'Not selected', 472, 122, 656, 'director'),
+    `<line x1="800" y1="180" x2="800" y2="200" stroke="#9bb0bf" stroke-width="2"/>`,
+    personBanner('Crew Operations Manager', operationsManager?.person.name || 'Not selected', 524, 202, 552, 'operations'),
+    teamGrid(data, crewManagers, 274),
+    footer(data, `${crewManagers.length} Crew Managers`),
+  ].join('')
+}
+
+function managerOverview(data: ChartData, director: CrewDirectorNode | null, operationsManager: OperationsManagerNode | null, crewManager: CrewManagerNode | null) {
+  const visibleManagers = crewManager ? [crewManager] : []
+  const vesselCount = crewManager ? vesselsForCrewManager(data, crewManager).length : 0
+  return [
+    exportHeader(
+      data,
+      `${crewManager?.person.name || 'Crew Manager'} · Allocation Focus`,
+      `Crew Operations Manager: ${operationsManager?.person.name || 'Not selected'}`,
+    ),
+    personBanner('Crew Director', director?.person.name || 'Not selected', 472, 122, 656, 'director'),
+    `<line x1="800" y1="180" x2="800" y2="200" stroke="#9bb0bf" stroke-width="2"/>`,
+    personBanner('Crew Operations Manager', operationsManager?.person.name || 'Not selected', 524, 202, 552, 'operations'),
+    teamGrid(data, visibleManagers, 274),
+    footer(data, `${vesselCount} vessel names shown`),
+  ].join('')
+}
+
+export function generateExportSvg(data: ChartData, target: ExportTarget) {
+  const director = resolveDirector(data, target)
+  const operationsManager = resolveOperationsManager(data, target)
+  const crewManager = target.kind === 'manager'
+    ? operationsManager?.crewManagers.find((item) => item.id === target.crewManagerId) || null
+    : null
+
+  const body = target.kind === 'full'
+    ? fullOverview(data)
+    : target.kind === 'director'
+      ? directorOverview(data, director)
+      : target.kind === 'operations'
+        ? operationsOverview(data, director, operationsManager)
+        : managerOverview(data, director, operationsManager, crewManager)
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">${body}</svg>`
+}
+
+export function generateChartSvg(data: ChartData, viewMode: ViewMode, operationsManagerId = '') {
+  if (viewMode === 'overview') return generateExportSvg(data, { kind: 'full' })
+  if (viewMode === 'operations' && operationsManagerId) return generateExportSvg(data, { kind: 'operations', operationsManagerId })
+  return generateExportSvg(data, { kind: 'full' })
+}

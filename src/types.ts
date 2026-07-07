@@ -1,5 +1,5 @@
 export type WorkflowRole = 'CREW_DIRECTOR' | 'OPERATIONS_MANAGER' | 'CREW_MANAGER' | 'ASSISTANT'
-export type ViewMode = 'dashboard' | 'overview' | 'detail' | 'allocation' | 'vessels' | 'access'
+export type ViewMode = 'dashboard' | 'overview' | 'operations' | 'vessels' | 'access'
 export type VesselStatus = 'IN_MANAGEMENT' | 'UPCOMING' | 'OUT_OF_MANAGEMENT'
 export type ManagementType = 'FULL_MANAGED' | 'CREW_MANAGED'
 

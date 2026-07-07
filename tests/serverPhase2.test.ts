@@ -13,7 +13,7 @@ describe('Phase 2 backend helpers', () => {
   })
 
   it('validates organization and people payloads', () => {
-    expect(organizationSchema.safeParse({ name: 'Acme', title: 'Crew Planner', effectiveDate: null, footerText: 'Internal' }).success).toBe(true)
+    expect(organizationSchema.safeParse({ name: 'Acme', title: 'Crew Operations Organization Chart', effectiveDate: null, footerText: 'Internal' }).success).toBe(true)
     expect(personSchema.safeParse({ organizationId: 'org-1', name: 'A', designation: 'Boss', workflowRole: 'CREW_DIRECTOR' }).success).toBe(true)
   })
 

@@ -16,7 +16,7 @@ const directorOne = director('director-1', 'Anita Rao', 'Managing Director', 1)
 const directorTwo = director('director-2', 'Rahul Sen', 'Executive Director', 2)
 
 export const sampleData: ChartData = {
-  schemaVersion: 2, title: 'Crew Organization and Vessel Allocation Planner', organizationName: 'Northstar Maritime Services', effectiveDate: '2026-07-01',
+  schemaVersion: 2, title: 'Crew Operations Organization Chart', organizationName: 'Northstar Maritime Services', effectiveDate: '2026-07-01',
   crewDirectors: [{ ...directorOne, person: { ...directorOne.person, email: 'anita.rao@example.com' } }, directorTwo],
   operationsManagers: [
     ops('ops-1', directorOne.id, 'Marcus Pereira', 'Crew Operations Manager', 1, [leena, vikram]),
@@ -25,5 +25,5 @@ export const sampleData: ChartData = {
   vessels: [
     vessel('vessel-1','MV Northern Star','Bulk Carrier','manager-1','assistant-1',1), vessel('vessel-2','MV Ocean Crest','Bulk Carrier','manager-1','',2), vessel('vessel-3','MV Baltic Dawn','Container','manager-1','assistant-2',3),
     vessel('vessel-4','MT Meridian','Product Tanker','manager-2','assistant-3',4), vessel('vessel-5','MT Blue Haven','Chemical Tanker','manager-2','',5), vessel('vessel-6','OSV Seafarer','Offshore Supply','manager-3','assistant-4',6), vessel('vessel-7','OSV Horizon','Platform Supply','manager-3','',7),
-  ], footerText: 'Internal presentation • Crew Operations',
+  ], footerText: 'Internal presentation • Crew Operations Organization Chart',
 }

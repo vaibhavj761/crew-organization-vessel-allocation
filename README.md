@@ -1,6 +1,6 @@
-# Crew Organization and Vessel Allocation Planner
+# Crew Operations Organization Chart
 
-A crew organization and vessel allocation planner with a Vite + React frontend and a new Phase 1 backend foundation for secure internal use.
+A secure internal crew hierarchy and vessel allocation workspace with a Vite + React frontend and Fastify + Prisma backend.
 
 ## Using the chart builder
 
@@ -11,7 +11,7 @@ A crew organization and vessel allocation planner with a Vite + React frontend a
 3. Run `npm run dev`.
 4. Open the local address shown in the terminal, usually `http://localhost:5173`.
 
-The Version 2 sample planner appears automatically. Changes are saved in the current browser. Existing Version 1 browser data and JSON imports are migrated automatically.
+After you sign in, the app loads the latest live organization data from PostgreSQL. JSON import/export remains available for backup and controlled sharing.
 
 ### How to run the backend
 
@@ -26,14 +26,14 @@ The backend listens on port `8080` by default.
 ### How to create a local PostgreSQL database
 
 1. Install PostgreSQL locally, or use a local Docker/Postgres instance if you already have one.
-2. Create a database for the planner, for example `crew_chart_builder`.
+2. Create a database for the app, for example `crew_ops_org_chart`.
 3. Set `DATABASE_URL` in `server/.env` to point to that database.
 4. Run Prisma migration commands from the `server` folder.
 
 Example:
 
 ```bash
-createdb crew_chart_builder
+createdb crew_ops_org_chart
 ```
 
 ### How to configure `server/.env`
@@ -52,29 +52,29 @@ Keep real values out of GitHub and out of the frontend.
 
 ### Edit chart details
 
-Use the **Edit planner** panel on the left. Open **Chart settings** to change the title, organization name, effective date, and footer. Open **Crew Director** or **Operations hierarchy** to edit leadership.
+Use the **Chart editor** panel on the left. Open **Chart settings** to change the title, organization name, effective date, and footer. Open **Crew hierarchy** to edit Crew Directors, Crew Operations Managers, Crew Managers, and Assistants.
 
 ### Add teams, assistants, and vessels
 
-1. Open **Operations hierarchy** to add Operations Managers, Crew Managers, and Assistants.
-2. Select **Vessel master** in the top navigation.
+1. Open **Crew hierarchy** to add Crew Operations Managers, Crew Managers, and Assistants.
+2. Select **Vessel Master** in the top navigation.
 3. Add or edit vessels in the table and select the responsible Crew Manager.
 4. Optionally select an Assistant from that Crew Manager's support team.
 5. Use search and filters to focus on an operations group, status, or management type.
 
 ### Export for PowerPoint
 
-1. Choose **Full org chart** or **Vessel allocation** at the top.
+1. Open **Organization Chart** for the full hierarchy or **Operations & Vessel Allocation** for filtered team pages.
 2. Select **Export**.
 3. Choose **SVG vector** for the sharpest PowerPoint result, or **High-resolution PNG** for a ready-to-place image.
 4. Insert the downloaded file into a 16:9 PowerPoint slide.
 
-Use **Operations detail** to export one Operations Manager at a time. Use **Vessel allocation** when vessel metadata and allocation are the priority.
+Use **Operations & Vessel Allocation** to export a Crew Director team, a Crew Operations Manager team, or a single Crew Manager allocation image.
 
 ### Recommended PowerPoint workflow
 
 1. Export the **Organization Overview** SVG first.
-2. Export each **Operations Manager Detail** SVG you want to present.
+2. Export each **Crew Operations Manager team** SVG you want to present.
 3. Insert the SVG files directly into PowerPoint.
 4. Keep the **Vessel Master** table for appendix slides or internal backup reference.
 
@@ -110,9 +110,7 @@ npm run build
 
 ## Data and privacy
 
-Chart data is stored only in the browser under the `crew-chart-builder:v1` local-storage key. Use JSON export for backups or sharing. No data is sent to a server.
-
-Phase 1 introduces a separate backend foundation for authentication and PostgreSQL, but it does not replace the current frontend localStorage flow yet.
+Business data is stored in PostgreSQL through the backend API. Browser localStorage is used only for harmless UI preferences and export-status hints. Use JSON export for backups or sharing.
 
 ## Phase 2 backend summary
 
@@ -376,4 +374,4 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 - PNG: 3200 × 1800 image rendered from the same SVG
 - JSON: validated Version 2 planner data with automatic Version 1 migration
 
-Organization Overview, Operations Detail, and Vessel Allocation views can be exported. Direct PDF/PPT generation is intentionally deferred; SVG is the recommended PowerPoint format.
+Organization Chart and Operations & Vessel Allocation views can be exported. Direct PDF/PPT generation is intentionally deferred; SVG is the recommended PowerPoint format.

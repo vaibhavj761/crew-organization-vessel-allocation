@@ -1,2 +1,44 @@
-import{describe,expect,it}from'vitest';import{sampleData}from'../src/data/sampleData';import{generateChartSvg}from'../src/utils/exportSvg'
-describe('V2 SVG export',()=>{it.each(['overview','detail','allocation'] as const)('exports %s as native 16:9 SVG',m=>{const svg=generateChartSvg(sampleData,m,sampleData.operationsManagers[0].id);expect(svg).toContain('viewBox="0 0 1600 900"');expect(svg).not.toContain('foreignObject');expect(svg).not.toContain('Delete')});it('exports only selected operations manager detail',()=>{const svg=generateChartSvg(sampleData,'detail',sampleData.operationsManagers[1].id);expect(svg).toContain('Priya Nair');expect(svg).toContain('Elena George');expect(svg).not.toContain('Leena Thomas')});it('summarizes dense vessel data intentionally',()=>{const d=structuredClone(sampleData),cm=d.operationsManagers[0].crewManagers[0];d.vessels=Array.from({length:30},(_,i)=>({...d.vessels[0],id:`dense-${i}`,name:`Dense Vessel ${i}`,crewManagerId:cm.person.id,assignedAssistantId:'',sortOrder:i+1}));const svg=generateChartSvg(d,'detail',d.operationsManagers[0].id);expect(svg).toContain('MORE VESSELS');expect(svg).not.toContain('NaN')})})
+import { describe, expect, it } from 'vitest'
+import { sampleData } from '../src/data/sampleData'
+import { generateExportSvg } from '../src/utils/exportSvg'
+
+describe('SVG export', () => {
+  it('exports full overview as a native 16:9 SVG', () => {
+    const svg = generateExportSvg(sampleData, { kind: 'full' })
+    expect(svg).toContain('viewBox="0 0 1600 900"')
+    expect(svg).not.toContain('foreignObject')
+    expect(svg).not.toContain('Delete')
+  })
+
+  it('exports a selected operations manager team only', () => {
+    const svg = generateExportSvg(sampleData, { kind: 'operations', operationsManagerId: sampleData.operationsManagers[1].id })
+    expect(svg).toContain('Priya Nair')
+    expect(svg).toContain('Elena George')
+    expect(svg).not.toContain('Leena Thomas')
+  })
+
+  it('exports a selected crew manager allocation focus', () => {
+    const crewManagerId = sampleData.operationsManagers[0].crewManagers[0].id
+    const svg = generateExportSvg(sampleData, { kind: 'manager', crewManagerId })
+    expect(svg).toContain('Leena Thomas')
+    expect(svg).toContain('MV Northern Star')
+    expect(svg).not.toContain('Vikram Menon')
+  })
+
+  it('summarizes dense vessel data intentionally', () => {
+    const data = structuredClone(sampleData)
+    const crewManager = data.operationsManagers[0].crewManagers[0]
+    data.vessels = Array.from({ length: 50 }, (_, index) => ({
+      ...data.vessels[0],
+      id: `dense-${index}`,
+      name: `Dense Vessel ${index}`,
+      crewManagerId: crewManager.id,
+      assignedAssistantId: '',
+      sortOrder: index + 1,
+    }))
+
+    const svg = generateExportSvg(data, { kind: 'operations', operationsManagerId: data.operationsManagers[0].id })
+    expect(svg).toContain('more vessels in detailed view')
+    expect(svg).not.toContain('NaN')
+  })
+})
