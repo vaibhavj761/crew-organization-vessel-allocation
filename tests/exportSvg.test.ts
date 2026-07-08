@@ -41,4 +41,29 @@ describe('SVG export', () => {
     expect(svg).toContain('more vessels in detailed view')
     expect(svg).not.toContain('NaN')
   })
+
+  it('keeps a three-manager team visible in export output', () => {
+    const data = structuredClone(sampleData)
+    const directorId = data.crewDirectors[0].id
+    data.operationsManagers[0].crewManagers.push({
+      id: 'team-manager-3',
+      sortOrder: 3,
+      person: { id: 'manager-4', name: 'Sidharth Bajaj', designation: 'Crew Manager', workflowRole: 'CREW_MANAGER', email: '', phone: '', notes: '' },
+      assistants: [],
+      vesselIds: [],
+    })
+    data.vessels.push({
+      ...data.vessels[0],
+      id: 'vessel-extra-1',
+      name: 'MV Third Team Vessel',
+      crewManagerId: 'team-manager-3',
+      assignedAssistantId: '',
+      sortOrder: 99,
+    })
+
+    const svg = generateExportSvg(data, { kind: 'director', directorId })
+    expect(svg).toContain('Leena Thomas')
+    expect(svg).toContain('Vikram Menon')
+    expect(svg).toContain('Sidharth Bajaj')
+  })
 })

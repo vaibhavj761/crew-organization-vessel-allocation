@@ -1,5 +1,6 @@
 import { APP_NAME } from '../constants/app'
 import type { ChartData, CrewDirectorNode, CrewManagerNode, OperationsManagerNode, Vessel, ViewMode } from '../types'
+import { getCrewManagerLayoutMode } from './chartLayout'
 import { getCrewManagersForOperationsManager, getVesselColumnCount } from './operationsAllocation'
 
 export type ExportTarget =
@@ -184,20 +185,21 @@ function teamGrid(data: ChartData, crewManagers: CrewManagerNode[], top: number,
     return svgText(WIDTH / 2, 450, 'No Crew Managers configured', 16, 600, '#6a7e8f', 'middle')
   }
 
-  const columns = crewManagers.length === 1
+  const layoutMode = getCrewManagerLayoutMode(crewManagers.length)
+  const columns = layoutMode === 'one'
     ? 1
-    : crewManagers.length === 2
+    : layoutMode === 'two'
       ? 2
-      : fullWidth
-        ? Math.min(4, crewManagers.length)
-        : Math.min(3, crewManagers.length)
+      : layoutMode === 'three' || layoutMode === 'four'
+        ? 2
+        : fullWidth ? 3 : 3
   const rows = Math.ceil(crewManagers.length / columns)
   const gap = 18
   const availableWidth = WIDTH - PAGE_MARGIN * 2
   const width = columns === 1
     ? Math.min(620, availableWidth * 0.48)
     : ((availableWidth) - gap * (columns - 1)) / columns
-  const height = Math.max(180, (842 - top - gap * (rows - 1)) / rows)
+  const height = Math.max(layoutMode === 'many' ? 188 : 208, (842 - top - gap * (rows - 1)) / rows)
 
   return crewManagers.map((crewManager, index) => {
     const rowIndex = Math.floor(index / columns)

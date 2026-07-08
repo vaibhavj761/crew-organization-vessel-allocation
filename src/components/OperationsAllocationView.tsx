@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useChart } from '../state/ChartContext'
+import { getCrewManagerLayoutMode } from '../utils/chartLayout'
 import { getCrewManagersForOperationsManager } from '../utils/operationsAllocation'
 import { ChartHeader } from './ChartHeader'
 import { PersonCard } from './PersonCard'
@@ -39,6 +40,7 @@ export function OperationsAllocationView({
     () => visibleCrewManagers.reduce((total, team) => total + data.vessels.filter((item) => item.crewManagerId === team.id || item.crewManagerId === team.person.id).length, 0),
     [data.vessels, visibleCrewManagers],
   )
+  const layoutMode = getCrewManagerLayoutMode(visibleCrewManagers.length)
 
   if (!crewDirectorId) {
     return (
@@ -128,7 +130,9 @@ export function OperationsAllocationView({
         <span><strong>Crew Managers</strong>{visibleCrewManagers.length} · {visibleVesselCount} vessels</span>
       </div>
 
-      <div className={`team-grid operations-focus-grid manager-count-${Math.min(Math.max(visibleCrewManagers.length, 1), 4)}`}>
+      <div className="chart-guidance">Use zoom or scroll to review larger teams. Layout adapts automatically to keep every card visible.</div>
+
+      <div className={`team-grid operations-focus-grid layout-${layoutMode} manager-count-${Math.min(Math.max(visibleCrewManagers.length, 1), 4)}`}>
         {visibleCrewManagers.length ? visibleCrewManagers.map((team) => (
           <TeamCard
             key={team.id}

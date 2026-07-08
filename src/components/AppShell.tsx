@@ -38,6 +38,7 @@ export function AppShell({
   const [selectedOps, setSelectedOps] = useState('')
   const [selectedDirector, setSelectedDirector] = useState('')
   const [selectedCrewManager, setSelectedCrewManager] = useState('')
+  const [chartZoom, setChartZoom] = useState(1)
   const showEditorSidebar = canEdit && editorOpen && viewMode !== 'access'
   const readOnly = isReadOnly(user)
   const allowExport = canExport(user)
@@ -100,6 +101,10 @@ export function AppShell({
   useEffect(() => {
     document.title = getPageTitle(viewMode)
   }, [viewMode])
+
+  useEffect(() => {
+    setChartZoom(1)
+  }, [viewMode, selectedDirector, selectedOps, selectedCrewManager])
 
   const confirmDiscardChanges = () => {
     if (!hasUnsavedChanges) return true
@@ -252,8 +257,16 @@ export function AppShell({
                 <small>Live vessel database view</small>
               </label>
             )}
+            {(viewMode === 'overview' || viewMode === 'operations') && (
+              <div className="zoom-controls">
+                <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Fit team</button>
+                <button className="button secondary" onClick={() => setChartZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(2))))} disabled={loadState !== 'ready'}>Zoom out</button>
+                <button className="button secondary" onClick={() => setChartZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))} disabled={loadState !== 'ready'}>Zoom in</button>
+                <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Reset view</button>
+              </div>
+            )}
             {readOnly && <span className="read-only-pill">Read-only access</span>}
-            <span className="zoom-label">{viewMode === 'dashboard' ? 'Connected workspace' : viewMode === 'access' ? 'Administrator workspace' : '16:9 presentation preview'}</span>
+            <span className="zoom-label">{viewMode === 'dashboard' ? 'Connected workspace' : viewMode === 'access' ? 'Administrator workspace' : `Presentation workspace · ${Math.round(chartZoom * 100)}%`}</span>
           </div>
           {viewMode === 'dashboard' ? (
             <DashboardPage />
@@ -263,12 +276,14 @@ export function AppShell({
             <VesselMasterTable canEdit={canEdit} />
           ) : (
             <div className={`canvas-stage ${readOnly ? 'canvas-stage-readonly' : ''}`}>
+              <div className="presentation-viewport" style={{ zoom: chartZoom }}>
               <div className={`presentation-frame view-${viewMode}`}>
                 {viewMode === 'overview' ? (
                   <OrgChartView selectedDirectorId={selectedDirector} />
                 ) : (
                   <OperationsAllocationView crewDirectorId={selectedDirector} operationsManagerId={selectedOps} crewManagerId={selectedCrewManager} />
                 )}
+              </div>
               </div>
             </div>
           )}

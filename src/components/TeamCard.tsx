@@ -1,5 +1,6 @@
 import type { CrewManagerNode, Vessel } from '../types'
 import { getVesselColumnCount } from '../utils/operationsAllocation'
+import { getViewportVesselColumnCount } from '../utils/chartLayout'
 import { AssistantChip } from './AssistantChip'
 import { VesselTag } from './VesselTag'
 
@@ -17,10 +18,10 @@ export function TeamCard({
   vesselNamesOnly?: boolean
 }) {
   const visible = vesselNamesOnly ? vessels : vessels.slice(0, compact ? 3 : 12)
-  const vesselColumns = vesselNamesOnly ? getVesselColumnCount(vessels.length) : allocation ? 2 : 1
+  const vesselColumns = vesselNamesOnly ? getVesselColumnCount(vessels.length) : allocation ? 2 : getViewportVesselColumnCount(vessels.length)
 
   return (
-    <article className={`team-card ${allocation ? 'allocation-card' : ''} ${vesselNamesOnly ? 'names-only-card' : ''} assistants-${Math.min(team.assistants.length || 1, 3)}`}>
+    <article className={`team-card ${allocation ? 'allocation-card' : ''} ${vesselNamesOnly ? 'names-only-card' : ''} assistants-${Math.min(team.assistants.length || 1, 3)} vessels-${Math.min(vesselColumns, 3)}`}>
       <header className="team-header">
         <div className="manager-avatar">{team.person.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase()}</div>
         <div className="team-header-copy">
