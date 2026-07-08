@@ -33,7 +33,7 @@ export function AppShell({
   onLogout: () => void | Promise<void>
   onUnsavedChangesChange?: (value: boolean) => void
 }) {
-  const { data, saveState, hasUnsavedChanges, errorMessage, syncNotice, saveChanges, loadState, reloadFromServer } = useChart()
+  const { data, saveState, hasUnsavedChanges, errorMessage, syncNotice, saveChanges, loadState, refreshWorkspaceData } = useChart()
   const [editorOpen, setEditorOpen] = useState(true)
   const [selectedOps, setSelectedOps] = useState('')
   const [selectedDirector, setSelectedDirector] = useState('')
@@ -109,15 +109,24 @@ export function AppShell({
   const refreshPageData = async () => {
     if (loadState !== 'ready') return
     if (!confirmDiscardChanges()) return
-    await reloadFromServer(true)
+    await refreshWorkspaceData('manual-refresh')
   }
 
   const handleViewModeChange = (nextView: ViewMode) => {
     if (nextView === viewMode) return
     if (!confirmDiscardChanges()) return
     onViewModeChange(nextView)
-    if (nextView !== 'access' && loadState === 'ready') {
-      void reloadFromServer(true)
+    if (loadState === 'ready') {
+      const refreshReasonByView: Partial<Record<ViewMode, Parameters<typeof refreshWorkspaceData>[0]>> = {
+        dashboard: 'nav-click-dashboard',
+        overview: 'nav-click-organization',
+        operations: 'nav-click-operations',
+        vessels: 'nav-click-vessel-master',
+      }
+      const reason = refreshReasonByView[nextView]
+      if (reason) {
+        void refreshWorkspaceData(reason)
+      }
     }
   }
 
@@ -171,7 +180,7 @@ export function AppShell({
       </header>
       <main className="workspace">
         {showEditorSidebar && <EditorPanel selectedDirectorId={selectedDirector} selectedOperationsManagerId={selectedOps} selectedCrewManagerId={selectedCrewManager} />}
-        <section className="canvas-workspace">
+        <section className={`canvas-workspace view-${viewMode} ${showEditorSidebar ? 'with-editor' : 'full-width'}`}>
           {loadState === 'loading' && <div className="page-loading-banner">Loading latest database data…</div>}
           {syncNotice && <div className="page-loading-banner notice">{syncNotice}</div>}
           <div className="canvas-toolbar">
@@ -253,8 +262,8 @@ export function AppShell({
           ) : viewMode === 'vessels' ? (
             <VesselMasterTable canEdit={canEdit} />
           ) : (
-            <div className="canvas-stage">
-              <div className="presentation-frame">
+            <div className={`canvas-stage ${readOnly ? 'canvas-stage-readonly' : ''}`}>
+              <div className={`presentation-frame view-${viewMode}`}>
                 {viewMode === 'overview' ? (
                   <OrgChartView selectedDirectorId={selectedDirector} />
                 ) : (

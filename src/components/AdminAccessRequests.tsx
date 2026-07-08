@@ -1,6 +1,7 @@
 import { Copy, Link2, RefreshCw, ShieldCheck, UserCheck, UserMinus, UserRoundCog } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '../api/client'
+import { getRoleLabel } from '../utils/roles'
 
 type Role = 'ADMIN' | 'EDITOR' | 'VIEWER' | 'BOSS_VIEWER'
 type Status = 'PENDING_APPROVAL' | 'APPROVED_NEEDS_PASSWORD' | 'ACTIVE' | 'REJECTED' | 'DISABLED'
@@ -24,11 +25,11 @@ const roleOptions: Array<{ value: Role; label: string; help: string }> = [
   { value: 'ADMIN', label: 'Admin', help: 'Full access including user and role management.' },
   { value: 'EDITOR', label: 'Editor', help: 'Can edit organization, hierarchy, vessels, and allocations.' },
   { value: 'VIEWER', label: 'Viewer', help: 'Read-only access to view, filter, and export.' },
-  { value: 'BOSS_VIEWER', label: 'Boss Viewer', help: 'Presentation-focused read-only access.' },
+  { value: 'BOSS_VIEWER', label: 'Viewer', help: 'Read-only access to view, filter, and export.' },
 ]
 
 function friendlyRole(role: Role) {
-  return roleOptions.find((item) => item.value === role)?.label || role
+  return roleOptions.find((item) => item.value === role)?.label || getRoleLabel(role)
 }
 
 function friendlyStatus(status: Status) {
@@ -43,6 +44,8 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value)
 }
 
+type AccessRefreshReason = 'page-open' | 'manual-refresh' | 'post-action'
+
 export function AdminAccessRequests() {
   const [users, setUsers] = useState<RequestItem[]>([])
   const [roleDrafts, setRoleDrafts] = useState<Record<string, Role>>({})
@@ -52,12 +55,20 @@ export function AdminAccessRequests() {
   const [busyId, setBusyId] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshNotice, setRefreshNotice] = useState('')
+  const busyIdRef = useRef('')
+  const hasUnsavedRoleDraftsRef = useRef(false)
 
   const hasUnsavedRoleDrafts = users.some((item) => (roleDrafts[item.id] || item.role) !== item.role)
+  useEffect(() => {
+    busyIdRef.current = busyId
+  }, [busyId])
+  useEffect(() => {
+    hasUnsavedRoleDraftsRef.current = hasUnsavedRoleDrafts
+  }, [hasUnsavedRoleDrafts])
 
-  const load = useCallback(async (fresh = true) => {
-    if (busyId) return
-    if (hasUnsavedRoleDrafts) {
+  const load = useCallback(async (reason: AccessRefreshReason, fresh = true) => {
+    if (busyIdRef.current) return
+    if (reason !== 'post-action' && hasUnsavedRoleDraftsRef.current) {
       setRefreshNotice('New access-request data is available. Save or finish your role edits before refreshing.')
       return
     }
@@ -74,10 +85,10 @@ export function AdminAccessRequests() {
     } finally {
       setIsRefreshing(false)
     }
-  }, [busyId, hasUnsavedRoleDrafts])
+  }, [])
 
   useEffect(() => {
-    void load(true)
+    void load('page-open', true)
   }, [load])
 
   const grouped = useMemo(() => ({
@@ -99,7 +110,7 @@ export function AdminAccessRequests() {
       setSetupLink(response.setupLink)
       await copyText(response.setupLink)
       setMessage('Setup link copied.')
-      await load()
+      await load('post-action', true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Approval failed')
     } finally {
@@ -114,7 +125,7 @@ export function AdminAccessRequests() {
     try {
       await apiClient.request('/api/admin/access-requests/' + id + '/reject', { method: 'POST', body: JSON.stringify({}) })
       setMessage('Access request rejected.')
-      await load()
+      await load('post-action', true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Rejection failed')
     } finally {
@@ -151,7 +162,7 @@ export function AdminAccessRequests() {
         body: JSON.stringify(payload),
       })
       setMessage('User updated successfully.')
-      await load()
+      await load('post-action', true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'User update failed')
     } finally {
@@ -180,7 +191,7 @@ export function AdminAccessRequests() {
         </div>
 
         <div className="backup-actions">
-          <button className="button secondary" onClick={() => void load(true)} disabled={isRefreshing || !!busyId}>
+          <button className="button secondary" onClick={() => void load('manual-refresh', true)} disabled={isRefreshing || !!busyId}>
             <RefreshCw size={14} />
             {isRefreshing ? 'Refreshing…' : 'Refresh requests'}
           </button>

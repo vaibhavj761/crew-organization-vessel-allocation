@@ -1,7 +1,12 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppShell } from '../src/components/AppShell'
 import type { SafeUser, ViewMode } from '../src/types'
+
+const { refreshWorkspaceDataMock, saveChangesMock } = vi.hoisted(() => ({
+  refreshWorkspaceDataMock: vi.fn(),
+  saveChangesMock: vi.fn(),
+}))
 
 vi.mock('../src/state/ChartContext', () => ({
   useChart: () => ({
@@ -19,9 +24,9 @@ vi.mock('../src/state/ChartContext', () => ({
     hasUnsavedChanges: false,
     errorMessage: '',
     syncNotice: '',
-    saveChanges: vi.fn(),
+    saveChanges: saveChangesMock,
     loadState: 'ready',
-    reloadFromServer: vi.fn(),
+    refreshWorkspaceData: refreshWorkspaceDataMock,
   }),
 }))
 
@@ -86,12 +91,43 @@ function renderShell(role: SafeUser['role'], viewMode: ViewMode = 'dashboard') {
 }
 
 describe('AppShell role layout', () => {
+  beforeEach(() => {
+    refreshWorkspaceDataMock.mockClear()
+    saveChangesMock.mockClear()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('refreshes once on manual refresh and once on navigation click only', () => {
+    renderShell('ADMIN', 'dashboard')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(refreshWorkspaceDataMock).toHaveBeenCalledWith('manual-refresh')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Organization Chart' }))
+    expect(refreshWorkspaceDataMock).toHaveBeenCalledWith('nav-click-organization')
+    expect(refreshWorkspaceDataMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not refresh on passive interaction like mousemove or scroll', () => {
+    renderShell('VIEWER', 'dashboard')
+
+    fireEvent.mouseMove(window)
+    fireEvent.scroll(window)
+
+    expect(refreshWorkspaceDataMock).not.toHaveBeenCalled()
+  })
+
   it('uses expanded professional layout for read-only users without the editor sidebar', () => {
     const { container } = renderShell('VIEWER', 'overview')
     expect(container.firstElementChild).toHaveClass('editor-collapsed')
     expect(container.firstElementChild).toHaveClass('workspace-full')
     expect(screen.queryByText('Editor Panel')).not.toBeInTheDocument()
     expect(screen.getByText('Read-only access')).toBeInTheDocument()
+    expect(container.querySelector('.canvas-workspace.full-width')).not.toBeNull()
+    expect(container.querySelector('.presentation-frame.view-overview')).not.toBeNull()
   })
 
   it('hides access management navigation for non-admin roles', () => {
@@ -105,5 +141,14 @@ describe('AppShell role layout', () => {
     expect(container.firstElementChild).toHaveClass('workspace-full')
     expect(screen.getByText('Access Management')).toBeInTheDocument()
     expect(screen.queryByText('Editor Panel')).not.toBeInTheDocument()
+  })
+
+  it('does not refresh when typing in filter or form-like controls is not occurring', () => {
+    renderShell('EDITOR', 'vessels')
+
+    fireEvent.keyDown(window, { key: 'A' })
+    fireEvent.pointerMove(window)
+
+    expect(refreshWorkspaceDataMock).not.toHaveBeenCalled()
   })
 })

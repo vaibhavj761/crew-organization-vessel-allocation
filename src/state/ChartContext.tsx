@@ -19,6 +19,32 @@ import { createEmptyChartData } from '../utils/createEmptyChartData'
 
 type LoadState = 'loading' | 'ready' | 'error'
 type SaveState = 'saved' | 'saving' | 'error'
+export type WorkspaceRefreshReason =
+  | 'initial-login'
+  | 'browser-bootstrap'
+  | 'nav-click-dashboard'
+  | 'nav-click-organization'
+  | 'nav-click-operations'
+  | 'nav-click-vessel-master'
+  | 'nav-click-access-management'
+  | 'manual-refresh'
+  | 'filter-apply'
+  | 'save-success'
+
+const allowedRefreshReasons = new Set<WorkspaceRefreshReason>([
+  'initial-login',
+  'browser-bootstrap',
+  'nav-click-dashboard',
+  'nav-click-organization',
+  'nav-click-operations',
+  'nav-click-vessel-master',
+  'nav-click-access-management',
+  'manual-refresh',
+  'filter-apply',
+  'save-success',
+])
+
+const debugRefreshLogging = import.meta.env.DEV && import.meta.env.VITE_DEBUG_REFRESH === 'true'
 
 interface ChartContextValue {
   data: ChartData
@@ -29,7 +55,7 @@ interface ChartContextValue {
   errorMessage: string
   syncNotice: string
   saveChanges: () => Promise<void>
-  reloadFromServer: (fresh?: boolean) => Promise<void>
+  refreshWorkspaceData: (reason: WorkspaceRefreshReason) => Promise<void>
 }
 
 const ChartContext = createContext<ChartContextValue | null>(null)
@@ -51,6 +77,15 @@ function normalizeApiError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
+function logRefresh(reason: WorkspaceRefreshReason) {
+  if (!debugRefreshLogging || typeof window === 'undefined') return
+  console.info('[workspace-refresh]', {
+    reason,
+    at: new Date().toISOString(),
+    route: window.location.pathname,
+  })
+}
+
 export function ChartProvider({ children }: { children: ReactNode }) {
   const [data, reducerDispatch] = useReducer(chartReducer, undefined, initialData)
   const [loadState, setLoadState] = useState<LoadState>('loading')
@@ -67,12 +102,14 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     if (action.type !== 'replace') {
       editVersionRef.current += 1
       setErrorMessage('')
-      if (saveState !== 'saving') setSaveState('saved')
+      setSaveState((current) => current === 'saving' ? current : 'saved')
     }
     reducerDispatch(action)
-  }, [saveState])
+  }, [])
 
-  const loadFromServer = useCallback(async (fresh = false) => {
+  const loadFromServer = useCallback(async (reason: WorkspaceRefreshReason, fresh = true) => {
+    if (!allowedRefreshReasons.has(reason)) return
+    logRefresh(reason)
     const requestId = ++loadRequestRef.current
     const editVersionAtStart = editVersionRef.current
     const isInitialLoad = !snapshotRef.current
@@ -134,6 +171,10 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     }
   }, [dispatch])
 
+  const refreshWorkspaceData = useCallback(async (reason: WorkspaceRefreshReason) => {
+    await loadFromServer(reason, true)
+  }, [loadFromServer])
+
   const syncToServer = useCallback(async (current: ChartData, snapshot: ChartData | null) => {
     setSaveState('saving')
     setErrorMessage('')
@@ -172,7 +213,7 @@ export function ChartProvider({ children }: { children: ReactNode }) {
         }
         snapshotRef.current = workingCopy
         setSaveState('saved')
-        await loadFromServer()
+        await refreshWorkspaceData('save-success')
         return
       }
 
@@ -298,16 +339,16 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       snapshotRef.current = workingCopy
       setSaveState('saved')
       apiClient.clearGetRequestCache()
-      await loadFromServer(true)
+      await refreshWorkspaceData('save-success')
     } catch (error) {
       setSaveState('error')
       setErrorMessage(normalizeApiError(error, 'Failed to save changes'))
     }
-  }, [loadFromServer])
+  }, [refreshWorkspaceData])
 
   useEffect(() => {
-    void loadFromServer(true)
-  }, [loadFromServer])
+    void refreshWorkspaceData('browser-bootstrap')
+  }, [refreshWorkspaceData])
 
   const hasUnsavedChanges = useMemo(() => !(snapshotRef.current && equalJson(snapshotRef.current, data)), [data])
 
@@ -325,8 +366,8 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   }, [data, loadState, syncToServer])
 
   const value = useMemo(
-    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, reloadFromServer: loadFromServer }),
-    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, loadFromServer],
+    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, refreshWorkspaceData }),
+    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, refreshWorkspaceData],
   )
 
   return <ChartContext.Provider value={value}>{children}</ChartContext.Provider>
