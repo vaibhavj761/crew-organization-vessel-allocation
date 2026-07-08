@@ -7,6 +7,7 @@ import { canExport, isReadOnly } from '../utils/permissions'
 import { AccessDeniedPage } from './AccessDeniedPage'
 import { AdminAccessRequests } from './AdminAccessRequests'
 import { AuthShell } from './AuthShell'
+import { ChartErrorBoundary } from './ChartErrorBoundary'
 import { DashboardPage } from './DashboardPage'
 import { EditorPanel } from './EditorPanel'
 import { ExportToolbar } from './ExportToolbar'
@@ -278,11 +279,13 @@ export function AppShell({
             <div className={`canvas-stage ${readOnly ? 'canvas-stage-readonly' : ''}`}>
               <div className="presentation-viewport" style={{ zoom: chartZoom }}>
               <div className={`presentation-frame view-${viewMode}`}>
+                <ChartErrorBoundary onRetry={() => void refreshPageData()}>
                 {viewMode === 'overview' ? (
                   <OrgChartView selectedDirectorId={selectedDirector} />
                 ) : (
                   <OperationsAllocationView crewDirectorId={selectedDirector} operationsManagerId={selectedOps} crewManagerId={selectedCrewManager} />
                 )}
+                </ChartErrorBoundary>
               </div>
               </div>
             </div>

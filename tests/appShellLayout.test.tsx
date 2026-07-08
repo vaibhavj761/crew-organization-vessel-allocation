@@ -127,6 +127,7 @@ describe('AppShell role layout', () => {
     expect(screen.queryByText('Editor Panel')).not.toBeInTheDocument()
     expect(screen.getByText('Read-only access')).toBeInTheDocument()
     expect(container.querySelector('.canvas-workspace.full-width')).not.toBeNull()
+    expect(container.querySelector('.presentation-viewport')).not.toBeNull()
     expect(container.querySelector('.presentation-frame.view-overview')).not.toBeNull()
   })
 

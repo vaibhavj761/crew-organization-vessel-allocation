@@ -28,7 +28,7 @@ export function OperationsAllocationView({
   )
 
   const operationsManager = useMemo(
-    () => operationsManagers.find((item) => item.id === operationsManagerId) || operationsManagers[0],
+    () => operationsManagers.find((item) => item.id === operationsManagerId) || (!operationsManagerId ? operationsManagers[0] : undefined),
     [operationsManagerId, operationsManagers],
   )
 
@@ -72,7 +72,7 @@ export function OperationsAllocationView({
           {director ? <PersonCard person={director.person} level="head" /> : null}
         </div>
         <div className="chart-empty-state">
-          <strong>No Crew Operations Managers assigned yet.</strong>
+          <strong>No Crew Operations Managers found under this Crew Director.</strong>
           <span>Select another Crew Director or add a Crew Operations Manager to continue.</span>
         </div>
         <footer className="chart-footer">
@@ -94,8 +94,8 @@ export function OperationsAllocationView({
           {director ? <PersonCard person={director.person} level="head" /> : null}
         </div>
         <div className="chart-empty-state">
-          <strong>Select a Crew Operations Manager.</strong>
-          <span>Choose a Crew Operations Manager from the filter to review the team structure and vessel allocation.</span>
+          <strong>No matching team found for the selected filters.</strong>
+          <span>Choose another Crew Operations Manager or reset the filters.</span>
         </div>
         <footer className="chart-footer">
           <span>{data.footerText}</span>
@@ -142,8 +142,8 @@ export function OperationsAllocationView({
           />
         )) : (
           <div className="chart-empty-state">
-            <strong>No Crew Managers available for this selection.</strong>
-            <span>Choose “All Crew Managers” or select another Crew Operations Manager.</span>
+            <strong>No Crew Managers found under this Crew Operations Manager.</strong>
+            <span>This Operations Manager is visible, but no Crew Manager team cards have been added yet.</span>
           </div>
         )}
       </div>
