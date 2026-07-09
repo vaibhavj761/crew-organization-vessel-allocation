@@ -33,4 +33,16 @@ describe('api client url construction', () => {
     window.removeEventListener('crew-auth-invalidated', listener as EventListener)
     vi.unstubAllGlobals()
   })
+
+  it('shows a useful local backend message when fetch cannot connect', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    const { apiClient, baseUrl } = await import('../src/api/client')
+    await expect(apiClient.request('/api/health', { fresh: true })).rejects.toMatchObject({
+      status: 0,
+      message: `Cannot reach backend API. Please confirm the backend is running at ${baseUrl}.`,
+    })
+
+    vi.unstubAllGlobals()
+  })
 })

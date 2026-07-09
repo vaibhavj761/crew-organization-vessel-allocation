@@ -21,7 +21,7 @@ After you sign in, the app loads the latest live organization data from PostgreS
 4. Run `npm install` inside `server` the first time.
 5. Start the API with `npm run dev`.
 
-The backend listens on port `8080` by default.
+The backend listens on port `8081` by default.
 
 ### How to create a local PostgreSQL database
 
@@ -172,7 +172,7 @@ npm run dev
 Create a root `.env` file with:
 
 ```bash
-VITE_API_BASE_URL=http://localhost:8080
+VITE_API_BASE_URL=http://localhost:8081
 ```
 
 ### Login with the seeded admin
@@ -207,7 +207,7 @@ Backend `server/.env`
 ```bash
 DATABASE_URL=postgresql://...
 SESSION_SECRET=replace-with-a-long-secret
-PORT=8080
+PORT=8081
 NODE_ENV=development
 COOKIE_SECURE=false
 ENABLE_HTTPS_CSP=false
@@ -220,7 +220,7 @@ ADMIN_SEED_NAME=Admin User
 Frontend `.env`
 
 ```bash
-VITE_API_BASE_URL=http://localhost:8080
+VITE_API_BASE_URL=http://localhost:8081
 ```
 
 Temporary Droplet HTTP beta:

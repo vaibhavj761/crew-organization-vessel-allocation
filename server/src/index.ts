@@ -18,27 +18,20 @@ const app = Fastify({ logger: true })
 
 function allowedOrigins() {
   const configured = new URL(env.FRONTEND_URL)
-  const allowAnyLocalDevPort = env.NODE_ENV === 'development'
-    && (configured.hostname === 'localhost' || configured.hostname === '127.0.0.1')
+  const origins = new Set([env.FRONTEND_URL])
 
-  if (allowAnyLocalDevPort) {
-    return {
-      has(origin: string) {
-        try {
-          const candidate = new URL(origin)
-          return candidate.protocol === configured.protocol
-            && (candidate.hostname === 'localhost' || candidate.hostname === '127.0.0.1')
-        } catch {
-          return false
-        }
-      },
-    }
+  if (env.NODE_ENV === 'development' && configured.protocol === 'http:' && (configured.hostname === 'localhost' || configured.hostname === '127.0.0.1')) {
+    origins.add('http://localhost:5173')
+    origins.add('http://127.0.0.1:5173')
   }
 
-  return new Set([env.FRONTEND_URL])
+  return origins
 }
 
+const corsAllowedOrigins = allowedOrigins()
+
 await app.register(helmet, {
+  hsts: env.ENABLE_HTTPS_CSP ? undefined : false,
   contentSecurityPolicy: {
     directives: {
       'upgrade-insecure-requests': env.ENABLE_HTTPS_CSP ? [] : null,
@@ -47,7 +40,7 @@ await app.register(helmet, {
 })
 await app.register(cors, {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins().has(origin)) {
+    if (!origin || corsAllowedOrigins.has(origin)) {
       callback(null, true)
       return
     }
@@ -144,6 +137,13 @@ app.get('/', async (_request, reply) => {
 const start = async () => {
   try {
     await app.listen({ port: env.PORT, host: '0.0.0.0' })
+    app.log.info({
+      port: env.PORT,
+      nodeEnv: env.NODE_ENV,
+      frontendOrigins: Array.from(corsAllowedOrigins),
+      secureCookies: env.COOKIE_SECURE,
+      httpsCsp: env.ENABLE_HTTPS_CSP,
+    }, 'Server configuration')
   } catch (error) {
     app.log.error(error)
     process.exit(1)

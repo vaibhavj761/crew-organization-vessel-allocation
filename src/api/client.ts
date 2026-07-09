@@ -1,4 +1,4 @@
-const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:8080'
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:8081'
 const inflightGetRequests = new Map<string, Promise<unknown>>()
 let freshDataEpoch = Date.now()
 
@@ -54,15 +54,26 @@ async function request<T>(path: string, init: RequestOptions = {}) {
   const cacheKey = `${method}:${url}:${typeof init.body === 'string' ? init.body : ''}`
 
   const execute = async () => {
-    const response = await fetch(url, {
-      ...init,
-      credentials: 'include',
-      headers: {
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(init.fresh && method === 'GET' ? { 'Cache-Control': 'no-cache', Pragma: 'no-cache' } : {}),
-        ...(init.headers || {}),
-      },
-    })
+    let response: Response
+    try {
+      response = await fetch(url, {
+        ...init,
+        credentials: 'include',
+        headers: {
+          ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(init.fresh && method === 'GET' ? { 'Cache-Control': 'no-cache', Pragma: 'no-cache' } : {}),
+          ...(init.headers || {}),
+        },
+      })
+    } catch {
+      const target = rawBaseUrl || window.location.origin
+      throw new ApiError(
+        0,
+        import.meta.env.DEV
+          ? `Cannot reach backend API. Please confirm the backend is running at ${target}.`
+          : 'Could not connect to server.',
+      )
+    }
 
     const contentType = response.headers.get('content-type') || ''
     const payload = contentType.includes('application/json') ? await response.json().catch(() => null) : null

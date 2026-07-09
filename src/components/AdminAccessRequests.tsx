@@ -1,6 +1,7 @@
 import { Copy, Link2, RefreshCw, ShieldCheck, UserCheck, UserMinus, UserRoundCog } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '../api/client'
+import { copyTextToClipboard } from '../utils/clipboard'
 import { getRoleLabel } from '../utils/roles'
 
 type Role = 'ADMIN' | 'EDITOR' | 'VIEWER' | 'BOSS_VIEWER'
@@ -41,7 +42,7 @@ function formatDate(value?: string | null) {
 }
 
 async function copyText(value: string) {
-  await navigator.clipboard.writeText(value)
+  await copyTextToClipboard(value)
 }
 
 type AccessRefreshReason = 'page-open' | 'manual-refresh' | 'post-action'
@@ -108,8 +109,12 @@ export function AdminAccessRequests() {
         body: JSON.stringify({ role: roleDrafts[id] || 'VIEWER' }),
       })
       setSetupLink(response.setupLink)
-      await copyText(response.setupLink)
-      setMessage('Setup link copied.')
+      try {
+        await copyText(response.setupLink)
+        setMessage('Setup link copied.')
+      } catch {
+        setMessage('Access approved. Copy the setup link manually from the panel below.')
+      }
       await load('post-action', true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Approval failed')
@@ -143,8 +148,12 @@ export function AdminAccessRequests() {
         body: JSON.stringify({}),
       })
       setSetupLink(response.setupLink)
-      await copyText(response.setupLink)
-      setMessage('Setup/reset link copied.')
+      try {
+        await copyText(response.setupLink)
+        setMessage('Setup/reset link copied.')
+      } catch {
+        setMessage('Setup/reset link generated. Copy it manually from the panel below.')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not generate link')
     } finally {
@@ -172,8 +181,13 @@ export function AdminAccessRequests() {
 
   const copyMessage = async () => {
     if (!setupLink) return
-    await copyText(`Your access has been approved. Please set your password using this link: ${setupLink}`)
-    setMessage('Setup message copied.')
+    setError('')
+    try {
+      await copyText(`Your access has been approved. Please set your password using this link: ${setupLink}`)
+      setMessage('Setup message copied.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not copy automatically. Please copy the message manually.')
+    }
   }
 
   return (
@@ -202,7 +216,7 @@ export function AdminAccessRequests() {
             <strong>Manual setup link</strong>
             <p>{setupLink}</p>
             <div className="backup-actions admin-link-actions">
-              <button className="button secondary" onClick={() => void copyText(setupLink).then(() => setMessage('Copied.'))}><Copy size={14} /> Copy setup link</button>
+              <button className="button secondary" onClick={() => void copyText(setupLink).then(() => setMessage('Copied.')).catch((err) => setError(err instanceof Error ? err.message : 'Could not copy automatically. Please copy the link manually.'))}><Copy size={14} /> Copy setup link</button>
               <button className="button secondary" onClick={() => void copyMessage()}><ShieldCheck size={14} /> Copy message text</button>
             </div>
           </div>
