@@ -9,6 +9,7 @@ import { requestIp, writeAuditLog } from '../services/audit.js'
 import { getOrganizationHierarchy } from '../services/hierarchy.js'
 import { listVesselsWithAllocation } from '../services/vessels.js'
 import { toNullableDate, entitySnapshot } from '../utils/parse.js'
+import { firstZodMessage } from '../utils/validation.js'
 
 async function getPrimaryOrganization() {
   return prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } })
@@ -372,19 +373,50 @@ export async function organizationRoutes(app: FastifyInstance) {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
     const parsed = vesselSchema.safeParse(request.body)
-    if (!parsed.success) return badRequest(reply, 'Invalid vessel payload', parsed.error.flatten())
+    if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid vessel payload'), parsed.error.flatten())
     const org = await getPrimaryOrganization()
     if (!org) return notFound(reply, 'Organization not configured')
-    const createdVessel = await prisma.vessel.create({
-      data: {
-        ...parsed.data,
-        organizationId: org.id,
-        takeoverDate: toNullableDate(parsed.data.takeoverDate),
-        handoverDate: toNullableDate(parsed.data.handoverDate),
-        vesselStatus: parsed.data.vesselStatus,
-        managementType: parsed.data.managementType,
-        sortOrder: parsed.data.sortOrder ?? 0,
-      },
+    const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId }, include: { assistants: true } })
+    if (!crewManager) return notFound(reply, 'Crew manager not found')
+    if (parsed.data.assignedAssistantId) {
+      const assistant = crewManager.assistants.find((item) => item.id === parsed.data.assignedAssistantId)
+      if (!assistant) return badRequest(reply, 'Assigned assistant must belong to the selected crew manager')
+    }
+    const createdVessel = await prisma.$transaction(async (tx) => {
+      const vessel = await tx.vessel.create({
+        data: {
+          organizationId: org.id,
+          name: parsed.data.name,
+          vesselType: parsed.data.vesselType,
+          vesselDoc: parsed.data.vesselDoc || null,
+          deadweightTonnage: parsed.data.deadweightTonnage || null,
+          ownerPool: parsed.data.ownerPool || null,
+          ownerName: parsed.data.ownerName || null,
+          marineSuperintendent: parsed.data.marineSuperintendent || null,
+          vesselManager: parsed.data.vesselManager || null,
+          takeoverDate: toNullableDate(parsed.data.takeoverDate),
+          handoverDate: toNullableDate(parsed.data.handoverDate),
+          vesselStatus: parsed.data.vesselStatus,
+          managementType: parsed.data.managementType,
+          notes: parsed.data.notes || null,
+          sortOrder: parsed.data.sortOrder ?? 0,
+        },
+      })
+      await tx.vesselAllocation.upsert({
+        where: { vesselId: vessel.id },
+        create: {
+          vesselId: vessel.id,
+          crewManagerId: crewManager.id,
+          assignedAssistantId: parsed.data.assignedAssistantId || null,
+          allocatedAt: new Date(),
+        },
+        update: {
+          crewManagerId: crewManager.id,
+          assignedAssistantId: parsed.data.assignedAssistantId || null,
+          allocatedAt: new Date(),
+        },
+      })
+      return vessel
     })
     await writeAuditLog({ userId: user.id, action: 'vessel.create', entityType: 'Vessel', entityId: createdVessel.id, afterJson: createdVessel, ipAddress: requestIp(request) })
     return created(reply, createdVessel)
@@ -394,17 +426,57 @@ export async function organizationRoutes(app: FastifyInstance) {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
     const parsed = vesselSchema.partial().safeParse(request.body)
-    if (!parsed.success) return badRequest(reply, 'Invalid vessel payload', parsed.error.flatten())
+    if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid vessel payload'), parsed.error.flatten())
     const params = request.params as { id: string }
     const existing = await prisma.vessel.findUnique({ where: { id: params.id }, include: { vesselAllocations: { take: 1, orderBy: { allocatedAt: 'desc' } } } })
     if (!existing) return notFound(reply, 'Vessel not found')
-    const updated = await prisma.vessel.update({
-      where: { id: existing.id },
-      data: {
-        ...parsed.data,
-        takeoverDate: parsed.data.takeoverDate !== undefined ? toNullableDate(parsed.data.takeoverDate) : undefined,
-        handoverDate: parsed.data.handoverDate !== undefined ? toNullableDate(parsed.data.handoverDate) : undefined,
-      } as Prisma.VesselUpdateInput,
+    const currentAllocation = existing.vesselAllocations[0] || null
+    const targetCrewManagerId = parsed.data.crewManagerId ?? currentAllocation?.crewManagerId
+    if (!targetCrewManagerId) return badRequest(reply, 'Assignment is required.')
+    const crewManager = await prisma.crewManager.findUnique({ where: { id: targetCrewManagerId }, include: { assistants: true } })
+    if (!crewManager) return notFound(reply, 'Crew manager not found')
+    const targetAssistantId = parsed.data.assignedAssistantId !== undefined
+      ? (parsed.data.assignedAssistantId || null)
+      : (currentAllocation?.crewManagerId === targetCrewManagerId ? currentAllocation?.assignedAssistantId ?? null : null)
+    if (targetAssistantId) {
+      const assistant = crewManager.assistants.find((item) => item.id === targetAssistantId)
+      if (!assistant) return badRequest(reply, 'Assigned assistant must belong to the selected crew manager')
+    }
+    const updated = await prisma.$transaction(async (tx) => {
+      const vessel = await tx.vessel.update({
+        where: { id: existing.id },
+        data: {
+          name: parsed.data.name,
+          vesselType: parsed.data.vesselType,
+          vesselDoc: parsed.data.vesselDoc,
+          deadweightTonnage: parsed.data.deadweightTonnage,
+          ownerPool: parsed.data.ownerPool,
+          ownerName: parsed.data.ownerName,
+          marineSuperintendent: parsed.data.marineSuperintendent,
+          vesselManager: parsed.data.vesselManager,
+          takeoverDate: parsed.data.takeoverDate !== undefined ? toNullableDate(parsed.data.takeoverDate) : undefined,
+          handoverDate: parsed.data.handoverDate !== undefined ? toNullableDate(parsed.data.handoverDate) : undefined,
+          vesselStatus: parsed.data.vesselStatus,
+          managementType: parsed.data.managementType,
+          notes: parsed.data.notes,
+          sortOrder: parsed.data.sortOrder,
+        } as Prisma.VesselUpdateInput,
+      })
+      await tx.vesselAllocation.upsert({
+        where: { vesselId: vessel.id },
+        create: {
+          vesselId: vessel.id,
+          crewManagerId: crewManager.id,
+          assignedAssistantId: targetAssistantId,
+          allocatedAt: new Date(),
+        },
+        update: {
+          crewManagerId: crewManager.id,
+          assignedAssistantId: targetAssistantId,
+          allocatedAt: new Date(),
+        },
+      })
+      return vessel
     })
     await writeAuditLog({ userId: user.id, action: 'vessel.update', entityType: 'Vessel', entityId: updated.id, beforeJson: existing, afterJson: updated, ipAddress: requestIp(request) })
     return reply.send(updated)
@@ -426,19 +498,10 @@ export async function organizationRoutes(app: FastifyInstance) {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
     const parsed = allocationSchema.safeParse(request.body)
-    if (!parsed.success) return badRequest(reply, 'Invalid allocation payload', parsed.error.flatten())
+    if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid allocation payload'), parsed.error.flatten())
     const params = request.params as { id: string }
     const vessel = await prisma.vessel.findUnique({ where: { id: params.id } })
     if (!vessel) return notFound(reply, 'Vessel not found')
-    if (!parsed.data.crewManagerId) {
-      const existingAllocation = await prisma.vesselAllocation.findUnique({ where: { vesselId: vessel.id } })
-      if (existingAllocation) {
-        await prisma.vesselAllocation.delete({ where: { vesselId: vessel.id } })
-        await writeAuditLog({ userId: user.id, action: 'vessel.allocation.cleared', entityType: 'VesselAllocation', entityId: existingAllocation.id, beforeJson: existingAllocation, afterJson: null, ipAddress: requestIp(request) })
-      }
-      return reply.send({ success: true, cleared: true })
-    }
-
     const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId }, include: { assistants: true } })
     if (!crewManager) return notFound(reply, 'Crew manager not found')
     const assistantId: string | null = parsed.data.assignedAssistantId || null

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useChart } from '../state/ChartContext'
 import type { Vessel, VesselFilters } from '../types'
 import { createId } from '../utils/createId'
+import { validateVesselMasterFields } from '../utils/vesselValidation'
 
 const id = () => createId()
 
@@ -67,6 +68,7 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
         </div>
         {canEdit ? <button type="button" className="button" onClick={addVessel} disabled={loadState !== 'ready'}><Plus size={14} /> Add vessel</button> : null}
       </div>
+      {canEdit ? <p className="helper-copy">Required fields: Vessel name, Vessel type, Assignment.</p> : null}
 
       <div className="vessel-filters">
         <label className="search-field">
@@ -126,6 +128,7 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
   const crewManagers = data.operationsManagers.flatMap((op) => op.crewManagers)
   const crewManager = crewManagers.find((item) => item.id === vessel.crewManagerId)
   const update = (patch: Partial<Vessel>) => dispatch({ type: 'updateVessel', value: { ...vessel, ...patch } })
+  const validationErrors = editing ? validateVesselMasterFields(vessel) : { name: '', vesselType: '', assignment: '' }
 
   if (!editing) {
     return (
@@ -145,14 +148,23 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
 
   return (
     <tr className="editing-row">
-      <td><input value={vessel.name} onChange={(e) => update({ name: e.target.value })} /><input placeholder="DWT" value={vessel.deadweightTonnage} onChange={(e) => update({ deadweightTonnage: e.target.value })} /></td>
-      <td><input placeholder="Type" value={vessel.vesselType} onChange={(e) => update({ vesselType: e.target.value })} /><input placeholder="DOC" value={vessel.vesselDoc} onChange={(e) => update({ vesselDoc: e.target.value })} /></td>
+      <td>
+        <input aria-invalid={Boolean(validationErrors.name)} placeholder="Vessel name *" value={vessel.name} onChange={(e) => update({ name: e.target.value })} />
+        {validationErrors.name ? <small className="field-error">{validationErrors.name}</small> : null}
+        <input placeholder="DWT" value={vessel.deadweightTonnage} onChange={(e) => update({ deadweightTonnage: e.target.value })} />
+      </td>
+      <td>
+        <input aria-invalid={Boolean(validationErrors.vesselType)} placeholder="Vessel type *" value={vessel.vesselType} onChange={(e) => update({ vesselType: e.target.value })} />
+        {validationErrors.vesselType ? <small className="field-error">{validationErrors.vesselType}</small> : null}
+        <input placeholder="DOC" value={vessel.vesselDoc} onChange={(e) => update({ vesselDoc: e.target.value })} />
+      </td>
       <td><input placeholder="Owner name" value={vessel.ownerName} onChange={(e) => update({ ownerName: e.target.value })} /><input placeholder="Owner pool" value={vessel.ownerPool} onChange={(e) => update({ ownerPool: e.target.value })} /><input placeholder="Vessel manager" value={vessel.vesselManager} onChange={(e) => update({ vesselManager: e.target.value })} /></td>
       <td>
-        <select value={vessel.crewManagerId} onChange={(e) => update({ crewManagerId: e.target.value, assignedAssistantId: '' })}>
-          <option value="">Unassigned</option>
+        <select aria-invalid={Boolean(validationErrors.assignment)} value={vessel.crewManagerId} onChange={(e) => update({ crewManagerId: e.target.value, assignedAssistantId: '' })}>
+          <option value="">Select assignment *</option>
           {crewManagers.map((cm) => <option key={cm.id} value={cm.id}>{cm.person.name}</option>)}
         </select>
+        {validationErrors.assignment ? <small className="field-error">{validationErrors.assignment}</small> : null}
         <select value={vessel.assignedAssistantId} onChange={(e) => update({ assignedAssistantId: e.target.value })}>
           <option value="">Team responsibility</option>
           {crewManager?.assistants.map((assistant) => <option key={assistant.id} value={assistant.id}>{assistant.name}</option>)}

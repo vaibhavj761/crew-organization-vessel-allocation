@@ -16,6 +16,7 @@ import {
   mapVesselToApiPayload,
 } from './apiMappers'
 import { createEmptyChartData } from '../utils/createEmptyChartData'
+import { getBlockingVesselValidationMessage, normalizeVesselTextFields } from '../utils/vesselValidation'
 
 type LoadState = 'loading' | 'ready' | 'error'
 type SaveState = 'saved' | 'saving' | 'error'
@@ -181,6 +182,7 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     try {
       let organizationId = organizationIdRef.current
       const workingCopy = structuredClone(current)
+      workingCopy.vessels = workingCopy.vessels.map(normalizeVesselTextFields)
 
       if (!snapshot || !equalJson(
         {
@@ -295,13 +297,6 @@ export function ChartProvider({ children }: { children: ReactNode }) {
           await vesselsApi.updateVessel(vessel.id, { organizationId, ...mapVesselToApiPayload(vessel) } as never)
         }
 
-        const snap = snapshotVessels.get(vessel.id)
-        if (!snap || vessel.crewManagerId !== snap.crewManagerId || vessel.assignedAssistantId !== snap.assignedAssistantId) {
-          await vesselsApi.updateVesselAllocation(vessel.id, {
-            crewManagerId: vessel.crewManagerId || null,
-            assignedAssistantId: vessel.assignedAssistantId || null,
-          })
-        }
       }
 
       for (const snapOp of snapshot?.operationsManagers || []) {
@@ -357,6 +352,13 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     if (snapshotRef.current && equalJson(snapshotRef.current, data)) {
       setSaveState('saved')
       setErrorMessage('')
+      setSyncNotice('')
+      return
+    }
+    const vesselValidationMessage = getBlockingVesselValidationMessage(data.vessels)
+    if (vesselValidationMessage) {
+      setSaveState('error')
+      setErrorMessage(vesselValidationMessage)
       setSyncNotice('')
       return
     }

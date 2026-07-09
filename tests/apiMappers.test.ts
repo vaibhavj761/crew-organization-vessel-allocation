@@ -104,5 +104,6 @@ describe('api mappers', () => {
     const payload = mapVesselToApiPayload(sampleData.vessels[0])
     expect(payload.name).toBe('MV Northern Star')
     expect(payload.vesselStatus).toBe('IN_MANAGEMENT')
+    expect(payload.crewManagerId).toBe(sampleData.vessels[0].crewManagerId)
   })
 })

@@ -18,8 +18,11 @@ describe('Phase 2 backend helpers', () => {
   })
 
   it('validates vessel and allocation payloads', () => {
-    expect(vesselSchema.safeParse({ organizationId: 'org-1', name: 'MV Alpha', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED' }).success).toBe(true)
+    expect(vesselSchema.safeParse({ organizationId: 'org-1', name: 'MV Alpha', vesselType: 'Bulk Carrier', crewManagerId: 'cm-1', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED' }).success).toBe(true)
+    expect(vesselSchema.safeParse({ organizationId: 'org-1', name: '  ', vesselType: 'Bulk Carrier', crewManagerId: 'cm-1', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED' }).success).toBe(false)
+    expect(vesselSchema.safeParse({ organizationId: 'org-1', name: 'MV Alpha', vesselType: 'Bulk Carrier', crewManagerId: '   ', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED' }).success).toBe(false)
     expect(allocationSchema.safeParse({ crewManagerId: 'cm-1', assignedAssistantId: '' }).success).toBe(true)
+    expect(allocationSchema.safeParse({ crewManagerId: '   ', assignedAssistantId: '' }).success).toBe(false)
   })
 
   it('parses dates safely', () => {

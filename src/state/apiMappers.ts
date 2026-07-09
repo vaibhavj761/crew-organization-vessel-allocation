@@ -154,18 +154,21 @@ export function mapAssistantToApiPayload(assistant: Assistant) {
 }
 
 export function mapVesselToApiPayload(vessel: Vessel) {
+  const trim = (value: string) => value.trim()
   return {
-    name: vessel.name,
-    vesselType: text(vessel.vesselType),
-    vesselDoc: text(vessel.vesselDoc),
-    deadweightTonnage: text(vessel.deadweightTonnage),
-    ownerPool: text(vessel.ownerPool),
-    ownerName: text(vessel.ownerName),
-    vesselManager: text(vessel.vesselManager),
+    name: trim(vessel.name),
+    vesselType: trim(vessel.vesselType),
+    vesselDoc: trim(vessel.vesselDoc),
+    deadweightTonnage: trim(vessel.deadweightTonnage),
+    ownerPool: trim(vessel.ownerPool),
+    ownerName: trim(vessel.ownerName),
+    vesselManager: trim(vessel.vesselManager),
     vesselStatus: vessel.vesselStatus,
     managementType: vessel.managementType,
-    notes: text(vessel.notes),
+    notes: trim(vessel.notes),
     sortOrder: vessel.sortOrder,
+    crewManagerId: trim(vessel.crewManagerId),
+    assignedAssistantId: trim(vessel.assignedAssistantId),
   }
 }
 
