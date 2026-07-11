@@ -10,6 +10,7 @@ export function getPageTitle(viewMode: ViewMode) {
     overview: 'Organization Chart',
     operations: 'Operations & Vessel Allocation',
     vessels: 'Vessel Master',
+    ai: 'AI Assistant',
     access: 'Access Management',
   }
 

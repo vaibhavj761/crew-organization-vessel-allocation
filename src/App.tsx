@@ -75,6 +75,7 @@ export default function App() {
       '/organization': 'overview',
       '/operations-allocation': 'operations',
       '/vessel-master': 'vessels',
+      '/ai-assistant': 'ai',
       '/admin/access': 'access',
     }
 
@@ -204,6 +205,7 @@ export default function App() {
               overview: '/organization',
               operations: '/operations-allocation',
               vessels: '/vessel-master',
+              ai: '/ai-assistant',
               access: '/admin/access',
             }
             navigate(pathByView[nextView] || '/')

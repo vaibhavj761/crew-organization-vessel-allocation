@@ -1,5 +1,5 @@
 export type WorkflowRole = 'CREW_DIRECTOR' | 'OPERATIONS_MANAGER' | 'CREW_MANAGER' | 'ASSISTANT'
-export type ViewMode = 'dashboard' | 'overview' | 'operations' | 'vessels' | 'access'
+export type ViewMode = 'dashboard' | 'overview' | 'operations' | 'vessels' | 'ai' | 'access'
 export type VesselStatus = 'IN_MANAGEMENT' | 'UPCOMING' | 'OUT_OF_MANAGEMENT'
 export type ManagementType = 'FULL_MANAGED' | 'CREW_MANAGED'
 
@@ -49,4 +49,41 @@ export interface SafeUser {
 export interface VesselFilters {
   search: string; operationsManagerId: string; crewManagerId: string
   vesselStatus: '' | VesselStatus; managementType: '' | ManagementType
+}
+
+export type AiScope = 'auto' | 'vessel_master' | 'organization_chart'
+export type AiPreviewStatus = 'ready' | 'needs_clarification' | 'blocked' | 'not_configured' | 'error'
+export interface AiPreviewChange {
+  entity: string
+  field: string
+  oldValue: string | null
+  newValue: string | null
+}
+export interface AiPreviewResponse {
+  previewId: string | null
+  status: AiPreviewStatus
+  domain: 'vessel_master' | 'organization_chart' | 'unsupported'
+  action: string
+  summary: string
+  confidence: number
+  reasoningSummary: string
+  providerUsed: 'openai' | 'claude' | 'gemini' | 'mock' | 'none'
+  fallbackUsed: boolean
+  fallbackReason: string | null
+  changes: AiPreviewChange[]
+  warnings: string[]
+  clarifyingQuestion: string | null
+  requiresConfirmation: boolean
+}
+
+export interface AiStatusResponse {
+  provider: 'openai' | 'claude' | 'gemini' | 'mock' | 'none'
+  configured: boolean
+  model: string
+  understandingMode: 'llm-first' | 'local-parser' | 'disabled'
+  fallbackEnabled: boolean
+  lastProviderErrorCategory: 'missing_key' | 'invalid_key' | 'model_not_found' | 'quota' | 'network' | 'invalid_response' | null
+  lastProviderErrorMessage: string | null
+  voiceInput: 'browser-only'
+  previewStore: 'memory'
 }

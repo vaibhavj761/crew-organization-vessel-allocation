@@ -12,6 +12,7 @@ import { authRoutes } from './routes/auth.js'
 import { accessRequestRoutes } from './routes/accessRequests.js'
 import { healthRoutes } from './routes/health.js'
 import { organizationRoutes } from './routes/organization.js'
+import { aiRoutes } from './routes/ai.js'
 import { getCurrentUser } from './auth/context.js'
 
 const app = Fastify({ logger: true })
@@ -77,6 +78,7 @@ await app.register(healthRoutes)
 await app.register(authRoutes)
 await app.register(accessRequestRoutes)
 await app.register(organizationRoutes)
+await app.register(aiRoutes)
 
 const frontendDistDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../dist')
 const indexHtmlPath = path.join(frontendDistDir, 'index.html')

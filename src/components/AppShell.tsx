@@ -1,4 +1,4 @@
-import { Check, PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react'
+import { Bot, Check, PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME, getPageTitle } from '../constants/app'
 import { useChart } from '../state/ChartContext'
@@ -6,6 +6,7 @@ import type { SafeUser, ViewMode } from '../types'
 import { canExport, isReadOnly } from '../utils/permissions'
 import { AccessDeniedPage } from './AccessDeniedPage'
 import { AdminAccessRequests } from './AdminAccessRequests'
+import { AiAssistantPage } from './AiAssistantPage'
 import { AuthShell } from './AuthShell'
 import { ChartErrorBoundary } from './ChartErrorBoundary'
 import { DashboardPage } from './DashboardPage'
@@ -14,6 +15,7 @@ import { ExportToolbar } from './ExportToolbar'
 import { OperationsAllocationView } from './OperationsAllocationView'
 import { OrgChartView } from './OrgChartView'
 import { VesselMasterTable } from './VesselMasterTable'
+import type { AiScope } from '../types'
 
 export function AppShell({
   viewMode,
@@ -40,7 +42,8 @@ export function AppShell({
   const [selectedDirector, setSelectedDirector] = useState('')
   const [selectedCrewManager, setSelectedCrewManager] = useState('')
   const [chartZoom, setChartZoom] = useState(1)
-  const showEditorSidebar = canEdit && editorOpen && viewMode !== 'access'
+  const [aiInitialScope, setAiInitialScope] = useState<AiScope>('auto')
+  const showEditorSidebar = canEdit && editorOpen && viewMode !== 'access' && viewMode !== 'ai'
   const readOnly = isReadOnly(user)
   const allowExport = canExport(user)
 
@@ -142,7 +145,13 @@ export function AppShell({
     ['operations', 'Operations & Vessel Allocation'],
     ['vessels', 'Vessel Master'],
   ]
+  if (canEdit) modes.push(['ai', 'AI Assistant'])
   if (canAdmin) modes.push(['access', 'Access management'])
+
+  const openAiAssistant = (scope: AiScope) => {
+    setAiInitialScope(scope)
+    handleViewModeChange('ai')
+  }
 
   return (
     <div className={`app-shell ${showEditorSidebar ? '' : 'editor-collapsed workspace-full'} ${canEdit ? '' : 'read-only'}`}>
@@ -163,13 +172,13 @@ export function AppShell({
         </div>
         <div className="header-actions">
           <AuthShell user={user} onLogout={onLogout} onRefresh={onRefresh} />
-          {viewMode !== 'access' && (
+          {viewMode !== 'access' && viewMode !== 'ai' && (
             <button className="button secondary" onClick={() => void refreshPageData()} disabled={loadState !== 'ready' || saveState === 'saving'}>
               <RefreshCw size={14} />
               Refresh
             </button>
           )}
-          {canEdit && viewMode !== 'access' && <button className="button" onClick={() => void saveChanges()} disabled={loadState !== 'ready' || saveState === 'saving' || !hasUnsavedChanges}>{saveState === 'saving' ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Saved'}</button>}
+          {canEdit && viewMode !== 'access' && viewMode !== 'ai' && <button className="button" onClick={() => void saveChanges()} disabled={loadState !== 'ready' || saveState === 'saving' || !hasUnsavedChanges}>{saveState === 'saving' ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Saved'}</button>}
           {canEdit ? (
             <span className={`save-state ${saveState === 'error' ? 'save-error' : ''}`} title={errorMessage || undefined}>
               <Check size={14} />
@@ -193,6 +202,12 @@ export function AppShell({
             {canEdit && viewMode !== 'access' && (
               <button className="icon-button" onClick={() => setEditorOpen((v) => !v)} disabled={loadState !== 'ready'}>
                 {editorOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+              </button>
+            )}
+            {canEdit && (viewMode === 'overview' || viewMode === 'operations') && (
+              <button className="button secondary" type="button" onClick={() => openAiAssistant('organization_chart')}>
+                <Bot size={14} />
+                Ask AI
               </button>
             )}
             {viewMode === 'operations' && (
@@ -258,6 +273,12 @@ export function AppShell({
                 <small>Live vessel database view</small>
               </label>
             )}
+            {canEdit && viewMode === 'vessels' && (
+              <button className="button secondary" type="button" onClick={() => openAiAssistant('vessel_master')}>
+                <Bot size={14} />
+                Ask AI
+              </button>
+            )}
             {(viewMode === 'overview' || viewMode === 'operations') && (
               <div className="zoom-controls">
                 <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Fit team</button>
@@ -271,6 +292,8 @@ export function AppShell({
           </div>
           {viewMode === 'dashboard' ? (
             <DashboardPage />
+          ) : viewMode === 'ai' ? (
+            <AiAssistantPage user={user} initialScope={aiInitialScope} />
           ) : viewMode === 'access' ? (
             canAdmin ? <AdminAccessRequests /> : <AccessDeniedPage />
           ) : viewMode === 'vessels' ? (
