@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '../api/client'
 import { copyTextToClipboard } from '../utils/clipboard'
 import { getRoleLabel } from '../utils/roles'
+import { PageHeader, StatusBadge } from './ui'
 
 type Role = 'ADMIN' | 'EDITOR' | 'VIEWER' | 'BOSS_VIEWER'
 type Status = 'PENDING_APPROVAL' | 'APPROVED_NEEDS_PASSWORD' | 'ACTIVE' | 'REJECTED' | 'DISABLED'
@@ -191,11 +192,8 @@ export function AdminAccessRequests() {
   }
 
   return (
-    <section className="admin-access-panel">
-      <div className="editor-title">
-        <span>Access Management</span>
-        <small>ADMIN only</small>
-      </div>
+    <section className="admin-access-panel page-surface">
+      <PageHeader eyebrow="Administration" title="Access Management" description="Review access requests, assign roles, and manage active user access." actions={<StatusBadge tone="info">Admin only</StatusBadge>} />
       <div className="editor-scroll admin-access-scroll">
         <div className="admin-summary-grid">
           <SummaryCard title="Pending Requests" count={grouped.pending.length} icon={<UserRoundCog size={16} />} />

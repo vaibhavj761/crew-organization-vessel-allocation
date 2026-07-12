@@ -9,7 +9,7 @@ export function OrgChartView({ selectedDirectorId = '' }: { selectedDirectorId?:
   const visibleDirectors = selectedDirectorId ? data.crewDirectors.filter((director) => director.id === selectedDirectorId) : data.crewDirectors
 
   return (
-    <div className="chart-view org-chart">
+    <div className="chart-view chart-view--compact-top org-chart">
       <ChartHeader title="Organization Chart" subtitle="Executive crew reporting structure for management review" />
       <div className="chart-guidance">Use zoom or scroll to review larger leadership teams. Cards wrap automatically to avoid cropping.</div>
 

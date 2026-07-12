@@ -81,6 +81,10 @@ export function buildAiPreview(action: AiStructuredAction, reference: AiReferenc
   if (action.domain === 'unsupported' || action.action === 'unsupported') {
     return { ...response('blocked', action, blockedUnsupported), ...entityDetails(blockedUnsupported, 'Unsupported', null) }
   }
+  if (action.action.startsWith('remove_')) {
+    const summary = 'Removing organization records through AI is not supported. Use the manual editor and its confirmation controls.'
+    return { ...response('blocked', action, summary), ...entityDetails(summary, 'Unsupported', null) }
+  }
   if (action.confidence < 0.65) {
     const question = action.clarifyingQuestion || 'I am not fully sure what you want to update. Please clarify.'
     return { ...response('needs_clarification', action, question, [], action.warnings, question), ...entityDetails(question, 'Clarification', null) }

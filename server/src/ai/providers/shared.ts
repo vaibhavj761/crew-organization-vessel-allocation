@@ -2,6 +2,7 @@ import { aiActionSchema, aiDomainSchema, aiStructuredActionSchema, type AiStruct
 import { compactReferenceForAi, type AiReferenceData } from '../reference.js'
 
 export const allowedActions = aiActionSchema.options
+export const modelAllowedActions = allowedActions.filter((action) => !action.startsWith('remove_'))
 export const allowedDomains = aiDomainSchema.options
 
 export const emptyTarget = {
@@ -107,7 +108,7 @@ export function aiInstructionPrompt(reference: AiReferenceData) {
     'If a new vessel is missing vessel type or assignment, ask a clarifying question.',
     'If confidence is below 0.65, provide a clarifyingQuestion.',
     `Allowed domains: ${allowedDomains.join(', ')}.`,
-    `Allowed actions: ${allowedActions.join(', ')}.`,
+    `Allowed actions: ${modelAllowedActions.join(', ')}.`,
     'Return JSON only. No markdown.',
     '',
     'Schema:',
@@ -121,7 +122,7 @@ export function aiInstructionPrompt(reference: AiReferenceData) {
 export function aiJsonShape() {
   return {
     domain: 'vessel_master | organization_chart | unsupported',
-    action: allowedActions.join(' | '),
+    action: modelAllowedActions.join(' | '),
     confidence: 'number from 0 to 1',
     reasoningSummary: 'short explanation of how the instruction was interpreted',
     target: {

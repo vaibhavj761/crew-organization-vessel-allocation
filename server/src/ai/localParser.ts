@@ -332,10 +332,10 @@ export function parseLocalAiInstruction(prompt: string): AiStructuredAction | nu
   const removeAssistant = text.match(/^remove assistant\s+(.+?)\.?$/i) || text.match(/^remove\s+(.+?)\s+from\s+.+?\s+team\.?$/i)
   if (removeAssistant) {
     return action({
-      domain: 'organization_chart',
-      action: 'remove_assistant',
+      domain: 'unsupported',
+      action: 'unsupported',
       target: { ...emptyTarget, assistantName: clean(removeAssistant[1]) },
-      summary: `Remove Assistant ${clean(removeAssistant[1])}.`,
+      summary: 'Removing organization records through AI is not supported. Use the manual editor and its confirmation controls.',
     })
   }
 

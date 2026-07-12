@@ -98,6 +98,11 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
         </select>
       </div>
 
+      <div className="filter-summary" aria-live="polite">
+        <span>{rows.length} matching vessel{rows.length === 1 ? '' : 's'}</span>
+        {(filters.search || filters.operationsManagerId || filters.crewManagerId || filters.vesselStatus || filters.managementType) ? <button type="button" className="button ghost" onClick={() => setFilters({ search: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })}>Clear filters</button> : null}
+      </div>
+
       {error ? <p className="form-error">{error}</p> : null}
 
       <div className="vessel-table-wrap">
@@ -116,6 +121,7 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
             {rows.map((vessel) => (
               <VesselRow key={vessel.id} vessel={vessel} editing={editing === vessel.id} setEditing={setEditing} canEdit={canEdit} />
             ))}
+            {!rows.length ? <tr className="table-empty-row"><td colSpan={6}><strong>No vessels match these filters</strong><small>Adjust the search or filters to view other Vessel Master records.</small></td></tr> : null}
           </tbody>
         </table>
       </div>
@@ -134,10 +140,10 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
     return (
       <tr onDoubleClick={() => setEditing(vessel.id)}>
         <td><strong>{vessel.name}</strong><small>{vessel.deadweightTonnage && `${vessel.deadweightTonnage} DWT`}</small></td>
-        <td>{vessel.vesselType}<small>{vessel.vesselDoc}</small></td>
-        <td>{vessel.ownerName || vessel.ownerPool}<small>{vessel.vesselManager}</small></td>
+        <td>{vessel.vesselType || 'Type not set'}<small>{vessel.vesselDoc || 'DOC not provided'}</small></td>
+        <td>{vessel.ownerName || vessel.ownerPool || 'Owner not provided'}<small>{vessel.vesselManager || 'Manager not provided'}</small></td>
         <td>{crewManager?.person.name || 'Unassigned'}<small>{crewManager?.assistants.find((assistant) => assistant.id === vessel.assignedAssistantId)?.name}</small></td>
-        <td><span className="table-status">{vessel.vesselStatus.replaceAll('_', ' ')}</span><small>{vessel.managementType.replaceAll('_', ' ')}</small></td>
+        <td><span className={`table-status table-status--${vessel.vesselStatus.toLowerCase()}`}>{vessel.vesselStatus.replaceAll('_', ' ')}</span><small className="management-label">{vessel.managementType.replaceAll('_', ' ')}</small></td>
         <td>{canEdit ? <>
           <button type="button" className="mini-add" onClick={() => setEditing(vessel.id)}>Edit</button>
           <button type="button" className="tiny-icon danger-text" onClick={() => confirm('Delete this vessel?') && dispatch({ type: 'deleteVessel', id: vessel.id })}><Trash2 size={13} /></button>
@@ -181,7 +187,7 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
           <option value="CREW_MANAGED">CREW_MANAGED</option>
         </select>
       </td>
-      <td><button type="button" className="button" onClick={() => setEditing('')}>Done</button></td>
+      <td><button type="button" className="button" onClick={() => setEditing('')} disabled={Boolean(validationErrors.name || validationErrors.vesselType || validationErrors.assignment)} title={validationErrors.name || validationErrors.vesselType || validationErrors.assignment || undefined}>Finish editing</button></td>
     </tr>
   )
 }

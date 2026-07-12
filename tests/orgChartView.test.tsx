@@ -83,6 +83,7 @@ describe('OrgChartView deterministic layout', () => {
     chartDataMock.current = makeChartData(3)
     const { container } = render(<OrgChartView />)
 
+    expect(container.querySelector('.chart-view--compact-top.org-chart')).toBeTruthy()
     expect(screen.getByText('QA Director')).toBeInTheDocument()
     expect(screen.getByText('QA Operations Manager')).toBeInTheDocument()
     expect(screen.getByText('Crew Manager 1')).toBeInTheDocument()

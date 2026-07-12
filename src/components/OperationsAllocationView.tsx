@@ -44,7 +44,7 @@ export function OperationsAllocationView({
 
   if (!crewDirectorId) {
     return (
-      <div className="chart-view operations-allocation-view">
+      <div className="chart-view chart-view--compact-top operations-allocation-view">
         <ChartHeader
           title="Operations & Vessel Allocation"
           subtitle="Select a Crew Director to view the team structure."
@@ -63,7 +63,7 @@ export function OperationsAllocationView({
 
   if (!operationsManagers.length) {
     return (
-      <div className="chart-view operations-allocation-view">
+      <div className="chart-view chart-view--compact-top operations-allocation-view">
         <ChartHeader
           title="Operations & Vessel Allocation"
           subtitle={`Crew Director: ${director?.person.name || 'Not selected'}`}
@@ -85,7 +85,7 @@ export function OperationsAllocationView({
 
   if (!operationsManager) {
     return (
-      <div className="chart-view operations-allocation-view">
+      <div className="chart-view chart-view--compact-top operations-allocation-view">
         <ChartHeader
           title="Operations & Vessel Allocation"
           subtitle={`Crew Director: ${director?.person.name || 'Not selected'}`}
@@ -106,7 +106,7 @@ export function OperationsAllocationView({
   }
 
   return (
-    <div className="chart-view operations-allocation-view">
+    <div className="chart-view chart-view--compact-top operations-allocation-view">
       <ChartHeader
         title="Operations & Vessel Allocation"
         subtitle={crewManagerId

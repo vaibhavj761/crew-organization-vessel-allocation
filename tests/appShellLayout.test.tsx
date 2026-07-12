@@ -131,6 +131,16 @@ describe('AppShell role layout', () => {
     expect(container.querySelector('.presentation-frame.view-overview')).not.toBeNull()
   })
 
+  it('keeps chart controls compact above the presentation canvas', () => {
+    const { container } = renderShell('EDITOR', 'overview')
+
+    expect(screen.getByRole('button', { name: 'Fit' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument()
+    expect(container.querySelector('.canvas-toolbar')).not.toBeNull()
+    expect(container.querySelector('.canvas-stage')).not.toBeNull()
+    expect(container.querySelector('.presentation-viewport')).not.toBeNull()
+  })
+
   it('hides access management navigation for non-admin roles', () => {
     renderShell('BOSS_VIEWER', 'dashboard')
     expect(screen.queryByText('Access management')).not.toBeInTheDocument()
@@ -140,7 +150,7 @@ describe('AppShell role layout', () => {
     const { container } = renderShell('ADMIN', 'access')
     expect(container.firstElementChild).toHaveClass('editor-collapsed')
     expect(container.firstElementChild).toHaveClass('workspace-full')
-    expect(screen.getByText('Access Management')).toBeInTheDocument()
+    expect(screen.getAllByText('Access Management').length).toBeGreaterThan(0)
     expect(screen.queryByText('Editor Panel')).not.toBeInTheDocument()
   })
 

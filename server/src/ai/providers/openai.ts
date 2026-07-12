@@ -22,7 +22,7 @@ export async function interpretWithOpenAi(prompt: string, reference: AiReference
         type: 'json_schema',
         json_schema: {
           name: 'crew_ai_action',
-          strict: false,
+          strict: true,
           schema: {
             type: 'object',
             additionalProperties: false,
@@ -31,13 +31,29 @@ export async function interpretWithOpenAi(prompt: string, reference: AiReference
               action: { type: 'string' },
               confidence: { type: 'number' },
               reasoningSummary: { type: 'string' },
-              target: { type: 'object' },
-              data: { type: 'object' },
+              target: {
+                type: 'object', additionalProperties: false,
+                properties: {
+                  crewDirectorName: { type: ['string', 'null'] }, crewOperationsManagerName: { type: ['string', 'null'] },
+                  crewManagerName: { type: ['string', 'null'] }, assistantName: { type: ['string', 'null'] }, vesselName: { type: ['string', 'null'] },
+                },
+                required: ['crewDirectorName', 'crewOperationsManagerName', 'crewManagerName', 'assistantName', 'vesselName'],
+              },
+              data: {
+                type: 'object', additionalProperties: false,
+                properties: {
+                  name: { type: ['string', 'null'] }, newName: { type: ['string', 'null'] }, vesselName: { type: ['string', 'null'] },
+                  newVesselName: { type: ['string', 'null'] }, vesselType: { type: ['string', 'null'] }, assignmentCrewManagerName: { type: ['string', 'null'] },
+                  parentCrewDirectorName: { type: ['string', 'null'] }, parentCrewOperationsManagerName: { type: ['string', 'null'] }, parentCrewManagerName: { type: ['string', 'null'] },
+                  newParentCrewDirectorName: { type: ['string', 'null'] }, newParentCrewOperationsManagerName: { type: ['string', 'null'] }, newParentCrewManagerName: { type: ['string', 'null'] },
+                },
+                required: ['name', 'newName', 'vesselName', 'newVesselName', 'vesselType', 'assignmentCrewManagerName', 'parentCrewDirectorName', 'parentCrewOperationsManagerName', 'parentCrewManagerName', 'newParentCrewDirectorName', 'newParentCrewOperationsManagerName', 'newParentCrewManagerName'],
+              },
               clarifyingQuestion: { type: ['string', 'null'] },
               summary: { type: 'string' },
               warnings: { type: 'array', items: { type: 'string' } },
             },
-            required: ['domain', 'action', 'confidence', 'target', 'data', 'summary', 'warnings'],
+            required: ['domain', 'action', 'confidence', 'reasoningSummary', 'target', 'data', 'clarifyingQuestion', 'summary', 'warnings'],
           },
         },
       },
@@ -90,7 +106,8 @@ async function repairOpenAiJson(prompt: string, reference: AiReferenceData, inva
 function providerErrorMessage(provider: string, status: number, errorText: string) {
   const lower = errorText.toLowerCase()
   if (status === 401 || lower.includes('api key') || lower.includes('invalid_api_key')) return `${provider} API key was rejected.`
-  if (status === 429) return `${provider} rate limit was reached. Please try again later.`
+  if (status === 429 && (lower.includes('insufficient_quota') || lower.includes('quota') || lower.includes('credit'))) return `${provider} quota is unavailable. Check API billing or project limits.`
+  if (status === 429) return `${provider} rate limit was reached. Please wait and try again.`
   if (status === 404 || lower.includes('model') && (lower.includes('not found') || lower.includes('does not exist') || lower.includes('unsupported'))) return `${provider} model is unavailable or was not found.`
   return `${provider} provider request failed.`
 }

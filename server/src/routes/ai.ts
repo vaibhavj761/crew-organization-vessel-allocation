@@ -4,11 +4,11 @@ import { requireCurrentUser } from '../auth/context.js'
 import { forbidden, badRequest, notFound } from '../utils/http.js'
 import { requestIp } from '../services/audit.js'
 import { env } from '../config/env.js'
-import { aiProviderStatus, interpretAiPrompt, isAiProviderConfigured, notConfiguredMessage, recordAiProviderError } from '../ai/provider.js'
+import { aiProviderStatus, categorizeProviderError, interpretAiPrompt, isAiProviderConfigured, notConfiguredMessage, recordAiProviderError } from '../ai/provider.js'
 import { getAiReferenceData, referenceHash } from '../ai/reference.js'
 import { buildAiPreview, applyAiPreview } from '../ai/actions.js'
 import { deleteAiPreview, getAiPreview, storeAiPreview } from '../ai/previewStore.js'
-import { detectPromptDomain, scopeMismatchMessage } from '../ai/localParser.js'
+import { scopeMismatchMessage } from '../ai/localParser.js'
 
 const previewRequestSchema = z.object({
   prompt: z.string().transform((value) => value.trim()).pipe(z.string().min(1, 'Instruction is required.')),
@@ -45,6 +45,7 @@ function publicPreview(stored: ReturnType<typeof storeAiPreview>) {
     warnings: stored.warnings,
     clarifyingQuestion: stored.clarifyingQuestion,
     requiresConfirmation: stored.requiresConfirmation,
+    errorCategory: null,
   }
 }
 
@@ -67,35 +68,6 @@ export async function aiRoutes(app: FastifyInstance) {
 
     try {
       const reference = await getAiReferenceData()
-      const detectedDomain = detectPromptDomain(parsed.data.prompt)
-      const mismatch = scopeMismatchMessage(parsed.data.scope, detectedDomain)
-      if (env.NODE_ENV === 'development') {
-        request.log.info({
-          aiProvider: env.AI_PROVIDER,
-          aiModel: aiProviderStatus().model,
-          selectedScope: parsed.data.scope || 'auto',
-          detectedDomain,
-          llmFirst: env.AI_PROVIDER !== 'mock' && env.AI_PROVIDER !== 'none',
-        }, 'AI preview diagnostics')
-      }
-
-      if (mismatch) {
-        return reply.send({
-          previewId: null,
-          status: 'needs_clarification',
-          domain: detectedDomain || 'unsupported',
-          action: 'unsupported',
-          summary: mismatch,
-          confidence: 0,
-          reasoningSummary: mismatch,
-          ...previewMeta(),
-          changes: [],
-          warnings: [],
-          clarifyingQuestion: mismatch,
-          requiresConfirmation: false,
-        })
-      }
-
       if (env.AI_PROVIDER === 'none' || !isAiProviderConfigured()) {
         const summary = notConfiguredMessage()
         recordAiProviderError('missing_key', summary)
@@ -112,6 +84,7 @@ export async function aiRoutes(app: FastifyInstance) {
           warnings: env.AI_PROVIDER === 'none' ? ['Use AI_PROVIDER=mock for local deterministic testing.'] : [],
           clarifyingQuestion: null,
           requiresConfirmation: false,
+          errorCategory: 'missing_key',
         })
       }
 
@@ -131,11 +104,43 @@ export async function aiRoutes(app: FastifyInstance) {
           warnings: [],
           clarifyingQuestion: null,
           requiresConfirmation: false,
+          errorCategory: 'missing_key',
+        })
+      }
+      const interpretedDomain = interpreted.action.domain === 'unsupported' ? null : interpreted.action.domain
+      const mismatch = scopeMismatchMessage(parsed.data.scope, interpretedDomain)
+      if (env.NODE_ENV === 'development') {
+        request.log.info({
+          aiProvider: env.AI_PROVIDER,
+          aiModel: aiProviderStatus().model,
+          selectedScope: parsed.data.scope || 'auto',
+          interpretedDomain,
+          providerUsed: interpreted.providerUsed,
+          fallbackUsed: interpreted.fallbackUsed,
+          llmFirst: env.AI_PROVIDER !== 'mock',
+        }, 'AI preview diagnostics')
+      }
+      if (mismatch) {
+        return reply.send({
+          previewId: null,
+          status: 'needs_clarification',
+          domain: interpretedDomain || 'unsupported',
+          action: 'unsupported',
+          summary: mismatch,
+          confidence: 0,
+          reasoningSummary: mismatch,
+          ...previewMeta(interpreted.providerUsed, interpreted.fallbackUsed, interpreted.fallbackReason),
+          changes: [],
+          warnings: [],
+          clarifyingQuestion: mismatch,
+          requiresConfirmation: false,
+          errorCategory: null,
         })
       }
       const preview = {
         ...buildAiPreview(interpreted.action, reference),
         ...previewMeta(interpreted.providerUsed, interpreted.fallbackUsed, interpreted.fallbackReason),
+        errorCategory: null,
       }
       if (env.NODE_ENV === 'development' && preview.status !== 'ready') {
         request.log.info({ validationStatus: preview.status, validationSummary: preview.summary }, 'AI preview validation result')
@@ -151,7 +156,8 @@ export async function aiRoutes(app: FastifyInstance) {
       return reply.send(publicPreview(stored))
     } catch (error) {
       request.log.error({ error }, 'AI preview failed')
-      const message = error instanceof Error && error.message ? error.message : 'AI provider request failed. Please check provider configuration or try a simpler instruction.'
+      const providerError = categorizeProviderError(error)
+      const message = providerError.message
       const summary = message.includes('AI provider') || message.includes('OpenAI') || message.includes('Claude') || message.includes('Gemini') || message.includes('configured')
         ? message
         : 'AI provider request failed. Please check provider configuration or try a clearer instruction.'
@@ -168,6 +174,7 @@ export async function aiRoutes(app: FastifyInstance) {
         warnings: ['If this is a common Vessel Master or Organization Chart command, try a clearer instruction such as: Create one new bulk carrier called Test and assign it to Pawan Kesari.'],
         clarifyingQuestion: null,
         requiresConfirmation: false,
+        errorCategory: providerError.category,
       })
     }
   })

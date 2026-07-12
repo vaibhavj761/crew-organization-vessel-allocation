@@ -100,8 +100,9 @@ describe('OperationsAllocationView blank-canvas protection', () => {
 
   it('shows all three Sidharth-style crew manager cards', () => {
     chartDataMock.current = makeChartData()
-    render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" crewManagerId="" />)
+    const { container } = render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" crewManagerId="" />)
 
+    expect(container.querySelector('.chart-view--compact-top.operations-allocation-view')).toBeTruthy()
     expect(screen.getAllByText('Sidharth Bajaj').length).toBeGreaterThan(0)
     expect(screen.getByText('Crew Manager One')).toBeInTheDocument()
     expect(screen.getByText('Crew Manager Two')).toBeInTheDocument()

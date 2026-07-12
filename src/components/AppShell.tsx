@@ -1,4 +1,4 @@
-import { Bot, Check, PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react'
+import { Bot, Check, Database, LayoutDashboard, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, ShieldCheck, ShipWheel, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME, getPageTitle } from '../constants/app'
 import { useChart } from '../state/ChartContext'
@@ -43,7 +43,7 @@ export function AppShell({
   const [selectedCrewManager, setSelectedCrewManager] = useState('')
   const [chartZoom, setChartZoom] = useState(1)
   const [aiInitialScope, setAiInitialScope] = useState<AiScope>('auto')
-  const showEditorSidebar = canEdit && editorOpen && viewMode !== 'access' && viewMode !== 'ai'
+  const showEditorSidebar = canEdit && editorOpen && (viewMode === 'overview' || viewMode === 'operations')
   const readOnly = isReadOnly(user)
   const allowExport = canExport(user)
 
@@ -139,14 +139,14 @@ export function AppShell({
     }
   }
 
-  const modes: [ViewMode, string][] = [
-    ['dashboard', 'Dashboard'],
-    ['overview', 'Organization Chart'],
-    ['operations', 'Operations & Vessel Allocation'],
-    ['vessels', 'Vessel Master'],
+  const modes: Array<[ViewMode, string, typeof LayoutDashboard]> = [
+    ['dashboard', 'Dashboard', LayoutDashboard],
+    ['overview', 'Organization Chart', Network],
+    ['operations', 'Operations & Vessel Allocation', ShipWheel],
+    ['vessels', 'Vessel Master', Database],
   ]
-  if (canEdit) modes.push(['ai', 'AI Assistant'])
-  if (canAdmin) modes.push(['access', 'Access management'])
+  if (canEdit) modes.push(['ai', 'AI Assistant', Sparkles])
+  if (canAdmin) modes.push(['access', 'Access management', ShieldCheck])
 
   const openAiAssistant = (scope: AiScope) => {
     setAiInitialScope(scope)
@@ -155,51 +155,65 @@ export function AppShell({
 
   return (
     <div className={`app-shell ${showEditorSidebar ? '' : 'editor-collapsed workspace-full'} ${canEdit ? '' : 'read-only'}`}>
-      <header className="app-header">
+      <aside className="app-sidebar" aria-label="Primary navigation">
         <div className="brand">
           <span className="brand-mark">CO</span>
           <span>
             <strong>{APP_SHORT_NAME}</strong>
-            <small>{APP_NAME}</small>
+            <small>Crew operations</small>
           </span>
         </div>
-        <div className="view-switcher">
-          {modes.map(([m, l]) => (
-            <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => handleViewModeChange(m)}>
-              {l}
+        <div className="sidebar-section-label">Workspace</div>
+        <nav className="view-switcher">
+          {modes.map(([m, l, Icon]) => (
+            <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => handleViewModeChange(m)} aria-current={viewMode === m ? 'page' : undefined}>
+              <Icon size={17} aria-hidden="true" />
+              <span>{l}</span>
+              {m === 'access' ? <small>Admin</small> : null}
             </button>
           ))}
+        </nav>
+        <div className="sidebar-footnote">
+          <span className="sidebar-status-dot" />
+          <div><strong>Live workspace</strong><small>PostgreSQL source of truth</small></div>
         </div>
-        <div className="header-actions">
-          <AuthShell user={user} onLogout={onLogout} onRefresh={onRefresh} />
-          {viewMode !== 'access' && viewMode !== 'ai' && (
-            <button className="button secondary" onClick={() => void refreshPageData()} disabled={loadState !== 'ready' || saveState === 'saving'}>
-              <RefreshCw size={14} />
-              Refresh
-            </button>
-          )}
-          {canEdit && viewMode !== 'access' && viewMode !== 'ai' && <button className="button" onClick={() => void saveChanges()} disabled={loadState !== 'ready' || saveState === 'saving' || !hasUnsavedChanges}>{saveState === 'saving' ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Saved'}</button>}
-          {canEdit ? (
-            <span className={`save-state ${saveState === 'error' ? 'save-error' : ''}`} title={errorMessage || undefined}>
-              <Check size={14} />
-              {saveState === 'saved' ? (hasUnsavedChanges ? 'Unsaved changes' : 'Saved to database') : saveState === 'saving' ? 'Saving…' : errorMessage || 'Could not sync'}
-            </span>
-          ) : (
-            <span className="save-state read-only-state">
-              <Check size={14} />
-              {syncNotice || 'Read-only view'}
-            </span>
-          )}
-          {allowExport && (viewMode === 'overview' || viewMode === 'operations') && <ExportToolbar viewMode={viewMode} selectedOperationsManagerId={selectedOps} selectedCrewDirectorId={selectedDirector} selectedCrewManagerId={selectedCrewManager} />}
-        </div>
-      </header>
-      <main className="workspace">
+      </aside>
+      <div className="app-main">
+        <header className="app-header">
+          <div className="topbar-title">
+            <span>{APP_NAME}</span>
+            <strong>{getPageTitle(viewMode).replace(` · ${APP_SHORT_NAME}`, '')}</strong>
+          </div>
+          <div className="header-actions">
+            {viewMode !== 'access' && viewMode !== 'ai' && (
+              <button className="button secondary compact-button" onClick={() => void refreshPageData()} disabled={loadState !== 'ready' || saveState === 'saving'}>
+                <RefreshCw size={14} />
+                Refresh
+              </button>
+            )}
+            {canEdit && viewMode !== 'access' && viewMode !== 'ai' && <button className="button compact-button" onClick={() => void saveChanges()} disabled={loadState !== 'ready' || saveState === 'saving' || !hasUnsavedChanges}>{saveState === 'saving' ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Saved'}</button>}
+            {viewMode !== 'access' && viewMode !== 'ai' && (canEdit ? (
+              <span className={`save-state ${saveState === 'error' ? 'save-error' : ''}`} title={errorMessage || undefined}>
+                <Check size={14} />
+                {saveState === 'saved' ? (hasUnsavedChanges ? 'Unsaved changes' : 'Saved to database') : saveState === 'saving' ? 'Saving…' : errorMessage || 'Could not sync'}
+              </span>
+            ) : (
+              <span className="save-state read-only-state">
+                <Check size={14} />
+                {syncNotice || 'Read-only view'}
+              </span>
+            ))}
+            {allowExport && (viewMode === 'overview' || viewMode === 'operations') && <ExportToolbar viewMode={viewMode} selectedOperationsManagerId={selectedOps} selectedCrewDirectorId={selectedDirector} selectedCrewManagerId={selectedCrewManager} />}
+            <AuthShell user={user} onLogout={onLogout} onRefresh={onRefresh} />
+          </div>
+        </header>
+        <main className="workspace">
         {showEditorSidebar && <EditorPanel selectedDirectorId={selectedDirector} selectedOperationsManagerId={selectedOps} selectedCrewManagerId={selectedCrewManager} />}
         <section className={`canvas-workspace view-${viewMode} ${showEditorSidebar ? 'with-editor' : 'full-width'}`}>
           {loadState === 'loading' && <div className="page-loading-banner">Loading latest database data…</div>}
           {syncNotice && <div className="page-loading-banner notice">{syncNotice}</div>}
-          <div className="canvas-toolbar">
-            {canEdit && viewMode !== 'access' && (
+          {(viewMode === 'overview' || viewMode === 'operations' || viewMode === 'vessels') ? <div className="canvas-toolbar">
+            {canEdit && (viewMode === 'overview' || viewMode === 'operations') && (
               <button className="icon-button" onClick={() => setEditorOpen((v) => !v)} disabled={loadState !== 'ready'}>
                 {editorOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
               </button>
@@ -281,17 +295,17 @@ export function AppShell({
             )}
             {(viewMode === 'overview' || viewMode === 'operations') && (
               <div className="zoom-controls">
-                <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Fit team</button>
+                <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Fit</button>
                 <button className="button secondary" onClick={() => setChartZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(2))))} disabled={loadState !== 'ready'}>Zoom out</button>
                 <button className="button secondary" onClick={() => setChartZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))} disabled={loadState !== 'ready'}>Zoom in</button>
-                <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Reset view</button>
+                <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Reset</button>
               </div>
             )}
             {readOnly && <span className="read-only-pill">Read-only access</span>}
-            <span className="zoom-label">{viewMode === 'dashboard' ? 'Connected workspace' : viewMode === 'access' ? 'Administrator workspace' : `Presentation workspace · ${Math.round(chartZoom * 100)}%`}</span>
-          </div>
+            <span className="zoom-label">{viewMode === 'vessels' ? 'Live database workspace' : `Presentation workspace · ${Math.round(chartZoom * 100)}%`}</span>
+          </div> : null}
           {viewMode === 'dashboard' ? (
-            <DashboardPage />
+            <DashboardPage user={user} onNavigate={handleViewModeChange} />
           ) : viewMode === 'ai' ? (
             <AiAssistantPage user={user} initialScope={aiInitialScope} />
           ) : viewMode === 'access' ? (
@@ -314,7 +328,8 @@ export function AppShell({
             </div>
           )}
         </section>
-      </main>
+        </main>
+      </div>
     </div>
   )
 }

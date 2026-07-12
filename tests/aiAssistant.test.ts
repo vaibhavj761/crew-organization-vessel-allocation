@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildAiPreview } from '../server/src/ai/actions'
 import { detectPromptDomain, parseLocalAiInstruction, scopeMismatchMessage } from '../server/src/ai/localParser'
-import { aiProviderStatus, applyBackendSanityCorrection, parseAiStructuredPayload, selectedAiModel, unsupportedAction } from '../server/src/ai/provider'
+import { aiProviderStatus, applyBackendSanityCorrection, categorizeProviderError, parseAiStructuredPayload, runProviderBeforeFallback, selectedAiModel, unsupportedAction } from '../server/src/ai/provider'
 import { deleteAiPreview, getAiPreview, storeAiPreview } from '../server/src/ai/previewStore'
 import { previewLabels } from '../src/components/AiAssistantPage'
 import type { AiReferenceData } from '../server/src/ai/reference'
@@ -102,6 +102,16 @@ describe('AI Assistant safety', () => {
       target: { ...action({}).target, crewOperationsManagerName: 'Sidharth Bajaj' },
     }), linkedReference)
     expect(preview.status).toBe('blocked')
+  })
+
+  it('blocks individual hierarchy removals even when a model proposes one', () => {
+    const preview = buildAiPreview(action({
+      domain: 'organization_chart',
+      action: 'remove_assistant',
+      target: { ...action({}).target, assistantName: 'Neha Patil' },
+    }), reference)
+    expect(preview.status).toBe('blocked')
+    expect(preview.requiresConfirmation).toBe(false)
   })
 
   it('stores previews server-side and removes them', () => {
@@ -285,5 +295,19 @@ describe('AI Assistant safety', () => {
     expect(selectedAiModel('openai')).toBeTruthy()
     expect(selectedAiModel('claude')).toBeTruthy()
     expect(selectedAiModel('gemini')).toBeTruthy()
+  })
+
+  it('distinguishes provider rate limits from exhausted quota', () => {
+    expect(categorizeProviderError(new Error('OpenAI rate limit was reached.')).category).toBe('rate_limit')
+    expect(categorizeProviderError(new Error('OpenAI quota is unavailable. Check API billing.')).category).toBe('quota')
+  })
+
+  it('finishes the configured provider call before evaluating deterministic fallback', async () => {
+    const order: string[] = []
+    await runProviderBeforeFallback(
+      async () => { order.push('provider-start'); await Promise.resolve(); order.push('provider-end'); return action({ action: 'unsupported' }) },
+      () => { order.push('fallback'); return parseLocalAiInstruction('add assistant Neha under Pavan') },
+    )
+    expect(order).toEqual(['provider-start', 'provider-end', 'fallback'])
   })
 })

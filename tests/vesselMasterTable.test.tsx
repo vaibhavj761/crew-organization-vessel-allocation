@@ -39,6 +39,7 @@ describe('VesselMasterTable validation', () => {
     expect(screen.getByText('Vessel name is required.')).toBeInTheDocument()
     expect(screen.getByText('Vessel type is required.')).toBeInTheDocument()
     expect(screen.getByText('Assignment is required.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Finish editing' })).toBeDisabled()
   })
 
   it('still loads the existing vessel list normally', () => {

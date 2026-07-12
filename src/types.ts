@@ -74,6 +74,7 @@ export interface AiPreviewResponse {
   warnings: string[]
   clarifyingQuestion: string | null
   requiresConfirmation: boolean
+  errorCategory?: 'missing_key' | 'invalid_key' | 'model_not_found' | 'rate_limit' | 'quota' | 'network' | 'invalid_response' | null
 }
 
 export interface AiStatusResponse {
@@ -82,7 +83,7 @@ export interface AiStatusResponse {
   model: string
   understandingMode: 'llm-first' | 'local-parser' | 'disabled'
   fallbackEnabled: boolean
-  lastProviderErrorCategory: 'missing_key' | 'invalid_key' | 'model_not_found' | 'quota' | 'network' | 'invalid_response' | null
+  lastProviderErrorCategory: 'missing_key' | 'invalid_key' | 'model_not_found' | 'rate_limit' | 'quota' | 'network' | 'invalid_response' | null
   lastProviderErrorMessage: string | null
   voiceInput: 'browser-only'
   previewStore: 'memory'
