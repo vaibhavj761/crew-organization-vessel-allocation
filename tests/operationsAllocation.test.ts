@@ -15,7 +15,7 @@ describe('operations allocation helpers', () => {
     const operationsManager = sampleData.operationsManagers[0]
 
     expect(getCrewManagersForOperationsManager(operationsManager)).toHaveLength(2)
-    expect(getCrewManagersForOperationsManager(operationsManager, operationsManager.crewManagers[1].id).map((item) => item.person.name)).toEqual(['Vikram Menon'])
+    expect(getCrewManagersForOperationsManager(operationsManager, operationsManager.deputyManagers[0].crewManagers[1].id).map((item) => item.person.name)).toEqual(['Vikram Menon'])
   })
 
   it('uses one, two, or three vessel columns based on count', () => {

@@ -10,7 +10,6 @@ export async function listVesselsWithAllocation(organizationId: string) {
         take: 1,
         include: {
           crewManager: { include: { person: true } },
-          assignedAssistant: { include: { person: true } },
         },
       },
     },
@@ -25,8 +24,8 @@ export async function listVesselsWithAllocation(organizationId: string) {
             id: allocation.id,
             crewManagerId: allocation.crewManagerId,
             crewManager: allocation.crewManager,
-            assignedAssistantId: allocation.assignedAssistantId,
-            assignedAssistant: allocation.assignedAssistant,
+            assignedAssistantId: null,
+            assignedAssistant: null,
             allocatedAt: allocation.allocatedAt,
           }
         : null,

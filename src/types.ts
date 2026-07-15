@@ -1,4 +1,4 @@
-export type WorkflowRole = 'CREW_DIRECTOR' | 'OPERATIONS_MANAGER' | 'CREW_MANAGER' | 'ASSISTANT'
+export type WorkflowRole = 'CREW_DIRECTOR' | 'OPERATIONS_MANAGER' | 'DEPUTY_MANAGER' | 'CREW_MANAGER' | 'ASSISTANT'
 export type ViewMode = 'dashboard' | 'overview' | 'operations' | 'vessels' | 'ai' | 'access'
 export type VesselStatus = 'IN_MANAGEMENT' | 'UPCOMING' | 'OUT_OF_MANAGEMENT'
 export type ManagementType = 'FULL_MANAGED' | 'CREW_MANAGED'
@@ -15,12 +15,17 @@ export interface CrewDirectorNode {
 }
 export interface CrewManagerNode {
   id: string; sortOrder: number; person: Person & { workflowRole: 'CREW_MANAGER' }
-  assistants: Assistant[]; vesselIds: string[]
+  vesselIds: string[]
+}
+export interface DeputyManagerNode {
+  id: string; sortOrder: number; person: Person & { workflowRole: 'DEPUTY_MANAGER' }
+  operationsManagerId: string
+  crewManagers: CrewManagerNode[]
 }
 export interface OperationsManagerNode {
   id: string; sortOrder: number; person: Person & { workflowRole: 'OPERATIONS_MANAGER' }
   crewDirectorId: string
-  crewManagers: CrewManagerNode[]
+  deputyManagers: DeputyManagerNode[]
 }
 export interface Vessel {
   id: string; name: string; vesselType: string; vesselDoc: string; deadweightTonnage: string

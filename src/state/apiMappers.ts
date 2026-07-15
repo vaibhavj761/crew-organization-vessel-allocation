@@ -1,10 +1,10 @@
-import type { Assistant, ChartData, CrewDirectorNode, CrewManagerNode, OperationsManagerNode, Person, Vessel } from '../types'
+import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, OperationsManagerNode, Person, Vessel } from '../types'
 
 type NullableString = string | null | undefined
 type RawPerson = Partial<Person> & { id?: string }
-type RawAssistant = { id?: string; person?: RawPerson }
-type RawCrewManager = { id?: string; person?: RawPerson; assistants?: RawAssistant[]; vessels?: Array<{ id?: string }> }
-type RawOperationsManager = { id?: string; crewDirectorId?: string; person?: RawPerson; crewManagers?: RawCrewManager[] }
+type RawCrewManager = { id?: string; person?: RawPerson; vessels?: Array<{ id?: string }> }
+type RawDeputyManager = { id?: string; operationsManagerId?: string; person?: RawPerson; crewManagers?: RawCrewManager[] }
+type RawOperationsManager = { id?: string; crewDirectorId?: string; person?: RawPerson; deputyManagers?: RawDeputyManager[]; crewManagers?: RawCrewManager[] }
 type RawCrewDirector = { id?: string; person?: RawPerson; operationsManagers?: RawOperationsManager[] }
 type RawHierarchyResponse = { crewDirectors?: RawCrewDirector[] } | null | undefined
 type RawVesselAllocation = { crewManagerId?: string; assignedAssistantId?: string | null }
@@ -38,31 +38,35 @@ function mapPerson<R extends Person['workflowRole']>(person: RawPerson | undefin
   }
 }
 
-function mapAssistant(raw: RawAssistant, sortOrder: number): Assistant {
-  return {
-    ...mapPerson(raw?.person, 'ASSISTANT', raw?.id || `assistant-${sortOrder}`, raw?.person?.name || 'New Assistant', raw?.person?.designation || 'Assistant Crew Manager'),
-    id: raw?.id || raw?.person?.id || `assistant-${sortOrder}`,
-    sortOrder,
-  }
-}
-
 function mapCrewManager(raw: RawCrewManager, sortOrder: number): CrewManagerNode {
   return {
     id: raw?.id || `crew-manager-${sortOrder}`,
     sortOrder,
     person: mapPerson(raw?.person, 'CREW_MANAGER', raw?.person?.id || raw?.id || `crew-manager-${sortOrder}`, raw?.person?.name || 'New Crew Manager', raw?.person?.designation || 'Crew Manager'),
-    assistants: (raw.assistants || []).map((assistant, index) => mapAssistant(assistant, index + 1)),
     vesselIds: (raw.vessels || []).map((vessel) => vessel?.id).filter((id): id is string => Boolean(id)),
   }
 }
 
+function mapDeputyManager(raw: RawDeputyManager, sortOrder: number): DeputyManagerNode {
+  return {
+    id: raw?.id || `deputy-manager-${sortOrder}`,
+    operationsManagerId: raw?.operationsManagerId || '',
+    sortOrder,
+    person: mapPerson(raw?.person, 'DEPUTY_MANAGER', raw?.person?.id || raw?.id || `deputy-manager-${sortOrder}`, raw?.person?.name || 'New Deputy Manager', raw?.person?.designation || 'Deputy Crew Manager'),
+    crewManagers: (raw.crewManagers || []).map((crewManager, index) => mapCrewManager(crewManager, index + 1)),
+  }
+}
+
 function mapOperationsManager(raw: RawOperationsManager, sortOrder: number): OperationsManagerNode {
+  const legacyCrewManagers = raw.crewManagers?.length
+    ? [{ id: `${raw.id || `operations-manager-${sortOrder}`}-default-deputy`, operationsManagerId: raw.id, person: { name: 'Deputy Manager', designation: 'Deputy Crew Manager' }, crewManagers: raw.crewManagers }]
+    : []
   return {
     id: raw?.id || `operations-manager-${sortOrder}`,
     crewDirectorId: raw?.crewDirectorId || '',
     sortOrder,
     person: mapPerson(raw?.person, 'OPERATIONS_MANAGER', raw?.person?.id || raw?.id || `operations-manager-${sortOrder}`, raw?.person?.name || 'New Operations Manager', raw?.person?.designation || 'Crew Operations Manager'),
-    crewManagers: (raw.crewManagers || []).map((crewManager, index) => mapCrewManager(crewManager, index + 1)),
+    deputyManagers: (raw.deputyManagers || legacyCrewManagers).map((deputyManager, index) => mapDeputyManager({ ...deputyManager, operationsManagerId: raw?.id || `operations-manager-${sortOrder}` }, index + 1)),
   }
 }
 
@@ -111,7 +115,7 @@ export function mapVesselResponseToVessel(raw: RawVessel, sortOrder: number): Ve
     ownerName: text(raw?.ownerName),
     vesselManager: text(raw?.vesselManager),
     crewManagerId: currentAllocation?.crewManagerId || '',
-    assignedAssistantId: currentAllocation?.assignedAssistantId || '',
+    assignedAssistantId: '',
     vesselStatus: raw?.vesselStatus || 'UPCOMING',
     managementType: raw?.managementType || 'FULL_MANAGED',
     notes: text(raw?.notes),
@@ -139,17 +143,17 @@ export function mapCrewManagerToApiPayload(crewManager: CrewManagerNode) {
   return mapPersonToApiPayload(crewManager.person)
 }
 
+export function mapDeputyManagerToApiPayload(deputyManager: DeputyManagerNode) {
+  return {
+    ...mapPersonToApiPayload(deputyManager.person),
+    sortOrder: deputyManager.sortOrder,
+  }
+}
+
 export function mapOperationsManagerToApiPayload(operationsManager: OperationsManagerNode) {
   return {
     ...mapPersonToApiPayload(operationsManager.person),
     sortOrder: operationsManager.sortOrder,
-  }
-}
-
-export function mapAssistantToApiPayload(assistant: Assistant) {
-  return {
-    ...mapPersonToApiPayload(assistant),
-    sortOrder: assistant.sortOrder,
   }
 }
 
@@ -168,7 +172,7 @@ export function mapVesselToApiPayload(vessel: Vessel) {
     notes: trim(vessel.notes),
     sortOrder: vessel.sortOrder,
     crewManagerId: trim(vessel.crewManagerId),
-    assignedAssistantId: trim(vessel.assignedAssistantId),
+    assignedAssistantId: '',
   }
 }
 

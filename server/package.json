@@ -7,8 +7,11 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/index.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "seed:admin": "tsx scripts/seedAdmin.ts"
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "seed:admin": "tsx scripts/seedAdmin.ts",
+    "seed:cm-asia": "tsx scripts/seedCmAsiaHierarchy.ts",
+    "seed:cm-asia:built": "node dist/scripts/seedCmAsiaHierarchy.js"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",

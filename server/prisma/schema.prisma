@@ -30,6 +30,7 @@ enum PasswordTokenType {
 enum WorkflowRole {
   CREW_DIRECTOR
   OPERATIONS_MANAGER
+  DEPUTY_MANAGER
   CREW_MANAGER
   ASSISTANT
 }
@@ -93,6 +94,7 @@ model Organization {
   people               Person[]
   crewDirectors        CrewDirector[]
   operationsManagers    OperationsManager[]
+  deputyManagers        DeputyManager[]
   crewManagers          CrewManager[]
   assistants            Assistant[]
   vessels               Vessel[]
@@ -113,6 +115,7 @@ model Person {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   crewDirector CrewDirector?
   operationsManager OperationsManager?
+  deputyManager DeputyManager?
   crewManager CrewManager?
   assistant Assistant?
 
@@ -146,12 +149,12 @@ model OperationsManager {
   organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   crewDirector  CrewDirector @relation(fields: [crewDirectorId], references: [id], onDelete: Restrict)
   person        Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
-  crewManagers  CrewManager[]
+  deputyManagers DeputyManager[]
 
   @@index([organizationId, crewDirectorId, sortOrder])
 }
 
-model CrewManager {
+model DeputyManager {
   id                  String   @id @default(cuid())
   organizationId      String
   operationsManagerId String
@@ -163,10 +166,27 @@ model CrewManager {
   organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   operationsManager OperationsManager @relation(fields: [operationsManagerId], references: [id], onDelete: Restrict)
   person            Person            @relation(fields: [personId], references: [id], onDelete: Cascade)
+  crewManagers      CrewManager[]
+
+  @@index([organizationId, operationsManagerId, sortOrder])
+}
+
+model CrewManager {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  deputyManagerId     String
+  personId            String   @unique
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deputyManager     DeputyManager     @relation(fields: [deputyManagerId], references: [id], onDelete: Restrict)
+  person            Person            @relation(fields: [personId], references: [id], onDelete: Cascade)
   assistants        Assistant[]
   vesselAllocations VesselAllocation[]
 
-  @@index([organizationId, operationsManagerId, sortOrder])
+  @@index([organizationId, deputyManagerId, sortOrder])
 }
 
 model Assistant {

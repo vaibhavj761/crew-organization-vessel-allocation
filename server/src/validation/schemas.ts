@@ -21,7 +21,7 @@ export const personSchema = z.object({
   organizationId: z.string().min(1),
   name: trimmedRequiredString('Name is required.'),
   designation: trimmedRequiredString('Designation is required.'),
-  workflowRole: z.enum(['CREW_DIRECTOR', 'OPERATIONS_MANAGER', 'CREW_MANAGER', 'ASSISTANT']),
+  workflowRole: z.enum(['CREW_DIRECTOR', 'OPERATIONS_MANAGER', 'DEPUTY_MANAGER', 'CREW_MANAGER', 'ASSISTANT']),
   email: z.string().email().optional().nullable().or(z.literal('')),
   phone: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),

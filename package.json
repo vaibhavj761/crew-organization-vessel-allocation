@@ -17,7 +17,10 @@
     "server:start": "npm --prefix server run start",
     "server:prisma:generate": "npm --prefix server run prisma:generate",
     "server:prisma:migrate": "npm --prefix server run prisma:migrate",
-    "server:seed:admin": "npm --prefix server run seed:admin"
+    "server:prisma:migrate:dev": "npm --prefix server run prisma:migrate:dev",
+    "server:seed:admin": "npm --prefix server run seed:admin",
+    "server:seed:cm-asia": "npm --prefix server run seed:cm-asia",
+    "server:seed:cm-asia:built": "npm --prefix server run seed:cm-asia:built"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

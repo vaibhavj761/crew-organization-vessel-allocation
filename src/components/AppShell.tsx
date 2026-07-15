@@ -37,9 +37,11 @@ export function AppShell({
   onUnsavedChangesChange?: (value: boolean) => void
 }) {
   const { data, saveState, hasUnsavedChanges, errorMessage, syncNotice, saveChanges, loadState, refreshWorkspaceData } = useChart()
+  const [navigationOpen, setNavigationOpen] = useState(true)
   const [editorOpen, setEditorOpen] = useState(true)
   const [selectedOps, setSelectedOps] = useState('')
   const [selectedDirector, setSelectedDirector] = useState('')
+  const [selectedDeputy, setSelectedDeputy] = useState('')
   const [selectedCrewManager, setSelectedCrewManager] = useState('')
   const [chartZoom, setChartZoom] = useState(1)
   const [aiInitialScope, setAiInitialScope] = useState<AiScope>('auto')
@@ -58,7 +60,15 @@ export function AppShell({
     [operationsManagersForDirector, selectedOps],
   )
   const selectedCrewManagers = useMemo(
-    () => selectedOperationsManager?.crewManagers || [],
+    () => {
+      const deputies = selectedOperationsManager?.deputyManagers || []
+      const visibleDeputies = selectedDeputy ? deputies.filter((deputy) => deputy.id === selectedDeputy) : deputies
+      return visibleDeputies.flatMap((deputy) => deputy.crewManagers)
+    },
+    [selectedDeputy, selectedOperationsManager],
+  )
+  const selectedDeputyManagers = useMemo(
+    () => selectedOperationsManager?.deputyManagers || [],
     [selectedOperationsManager],
   )
 
@@ -72,15 +82,24 @@ export function AppShell({
   useEffect(() => {
     if (!selectedDirector) {
       if (selectedOps) setSelectedOps('')
+      if (selectedDeputy) setSelectedDeputy('')
       if (selectedCrewManager) setSelectedCrewManager('')
       return
     }
 
     if (!operationsManagersForDirector.some((op) => op.id === selectedOps)) {
       setSelectedOps(operationsManagersForDirector[0]?.id || '')
+      setSelectedDeputy('')
       setSelectedCrewManager('')
     }
-  }, [operationsManagersForDirector, selectedDirector, selectedOps, selectedCrewManager])
+  }, [operationsManagersForDirector, selectedDirector, selectedOps, selectedDeputy, selectedCrewManager])
+
+  useEffect(() => {
+    if (selectedDeputy && !selectedDeputyManagers.some((deputy) => deputy.id === selectedDeputy)) {
+      setSelectedDeputy('')
+      setSelectedCrewManager('')
+    }
+  }, [selectedDeputy, selectedDeputyManagers])
 
   useEffect(() => {
     if (selectedCrewManager && !selectedCrewManagers.some((manager) => manager.id === selectedCrewManager)) {
@@ -108,7 +127,7 @@ export function AppShell({
 
   useEffect(() => {
     setChartZoom(1)
-  }, [viewMode, selectedDirector, selectedOps, selectedCrewManager])
+  }, [viewMode, selectedDirector, selectedOps, selectedDeputy, selectedCrewManager])
 
   const confirmDiscardChanges = () => {
     if (!hasUnsavedChanges) return true
@@ -154,7 +173,7 @@ export function AppShell({
   }
 
   return (
-    <div className={`app-shell ${showEditorSidebar ? '' : 'editor-collapsed workspace-full'} ${canEdit ? '' : 'read-only'}`}>
+    <div className={`app-shell ${navigationOpen ? '' : 'nav-collapsed'} ${showEditorSidebar ? '' : 'editor-collapsed workspace-full'} ${canEdit ? '' : 'read-only'}`}>
       <aside className="app-sidebar" aria-label="Primary navigation">
         <div className="brand">
           <span className="brand-mark">CO</span>
@@ -185,6 +204,10 @@ export function AppShell({
             <strong>{getPageTitle(viewMode).replace(` · ${APP_SHORT_NAME}`, '')}</strong>
           </div>
           <div className="header-actions">
+            <button className="button secondary compact-button" type="button" onClick={() => setNavigationOpen((value) => !value)}>
+              {navigationOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
+              {navigationOpen ? 'Hide menu' : 'Show menu'}
+            </button>
             {viewMode !== 'access' && viewMode !== 'ai' && (
               <button className="button secondary compact-button" onClick={() => void refreshPageData()} disabled={loadState !== 'ready' || saveState === 'saving'}>
                 <RefreshCw size={14} />
@@ -231,6 +254,7 @@ export function AppShell({
                   <select value={selectedDirector} onChange={(e) => {
                     setSelectedDirector(e.target.value)
                     setSelectedOps('')
+                    setSelectedDeputy('')
                     setSelectedCrewManager('')
                   }}>
                     <option value="">Select a Crew Director</option>
@@ -245,12 +269,27 @@ export function AppShell({
                   Select Crew Operations Manager
                   <select value={selectedOps} onChange={(e) => {
                     setSelectedOps(e.target.value)
+                    setSelectedDeputy('')
                     setSelectedCrewManager('')
                   }} disabled={!selectedDirector || !operationsManagersForDirector.length}>
                     <option value="">{selectedDirector ? 'Select a Crew Operations Manager' : 'Select a Crew Director first'}</option>
                     {operationsManagersForDirector.map((op) => (
                       <option key={op.id} value={op.id}>
                         {op.person.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inline-select">
+                  Select Deputy Manager
+                  <select value={selectedDeputy} onChange={(e) => {
+                    setSelectedDeputy(e.target.value)
+                    setSelectedCrewManager('')
+                  }} disabled={!selectedOperationsManager || !selectedDeputyManagers.length}>
+                    <option value="">{selectedOperationsManager ? 'All Deputy Managers' : 'Select a Crew Operations Manager first'}</option>
+                    {selectedDeputyManagers.map((deputy) => (
+                      <option key={deputy.id} value={deputy.id}>
+                        {deputy.person.name}
                       </option>
                     ))}
                   </select>
@@ -320,7 +359,7 @@ export function AppShell({
                 {viewMode === 'overview' ? (
                   <OrgChartView selectedDirectorId={selectedDirector} />
                 ) : (
-                  <OperationsAllocationView crewDirectorId={selectedDirector} operationsManagerId={selectedOps} crewManagerId={selectedCrewManager} />
+                  <OperationsAllocationView crewDirectorId={selectedDirector} operationsManagerId={selectedOps} deputyManagerId={selectedDeputy} crewManagerId={selectedCrewManager} />
                 )}
                 </ChartErrorBoundary>
               </div>

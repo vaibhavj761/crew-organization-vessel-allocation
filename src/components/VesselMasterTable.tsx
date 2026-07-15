@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useChart } from '../state/ChartContext'
 import type { Vessel, VesselFilters } from '../types'
 import { createId } from '../utils/createId'
+import { getAllCrewManagers } from '../utils/operationsAllocation'
 import { validateVesselMasterFields } from '../utils/vesselValidation'
 
 const id = () => createId()
@@ -28,8 +29,8 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
   const [filters, setFilters] = useState<VesselFilters>({ search: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })
   const [editing, setEditing] = useState('')
   const [error, setError] = useState('')
-  const crewManagers = data.operationsManagers.flatMap((op) => op.crewManagers)
-  const operationsManagers = data.operationsManagers.map((op) => ({ id: op.id, crewManagerIds: op.crewManagers.map((cm) => cm.id) }))
+  const crewManagers = getAllCrewManagers(data)
+  const operationsManagers = data.operationsManagers.map((op) => ({ id: op.id, crewManagerIds: op.deputyManagers.flatMap((deputy) => deputy.crewManagers.map((cm) => cm.id)) }))
   const rows = useMemo(() => filterVessels(data.vessels, filters, operationsManagers), [data.vessels, filters])
 
   const addVessel = () => {
@@ -131,7 +132,7 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
 
 function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; editing: boolean; setEditing: (id: string) => void; canEdit: boolean }) {
   const { data, dispatch } = useChart()
-  const crewManagers = data.operationsManagers.flatMap((op) => op.crewManagers)
+  const crewManagers = getAllCrewManagers(data)
   const crewManager = crewManagers.find((item) => item.id === vessel.crewManagerId)
   const update = (patch: Partial<Vessel>) => dispatch({ type: 'updateVessel', value: { ...vessel, ...patch } })
   const validationErrors = editing ? validateVesselMasterFields(vessel) : { name: '', vesselType: '', assignment: '' }
@@ -142,7 +143,7 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
         <td><strong>{vessel.name}</strong><small>{vessel.deadweightTonnage && `${vessel.deadweightTonnage} DWT`}</small></td>
         <td>{vessel.vesselType || 'Type not set'}<small>{vessel.vesselDoc || 'DOC not provided'}</small></td>
         <td>{vessel.ownerName || vessel.ownerPool || 'Owner not provided'}<small>{vessel.vesselManager || 'Manager not provided'}</small></td>
-        <td>{crewManager?.person.name || 'Unassigned'}<small>{crewManager?.assistants.find((assistant) => assistant.id === vessel.assignedAssistantId)?.name}</small></td>
+        <td>{crewManager?.person.name || 'Unassigned'}<small>{crewManager?.person.designation || 'Crew Manager'}</small></td>
         <td><span className={`table-status table-status--${vessel.vesselStatus.toLowerCase()}`}>{vessel.vesselStatus.replaceAll('_', ' ')}</span><small className="management-label">{vessel.managementType.replaceAll('_', ' ')}</small></td>
         <td>{canEdit ? <>
           <button type="button" className="mini-add" onClick={() => setEditing(vessel.id)}>Edit</button>
@@ -171,10 +172,6 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
           {crewManagers.map((cm) => <option key={cm.id} value={cm.id}>{cm.person.name}</option>)}
         </select>
         {validationErrors.assignment ? <small className="field-error">{validationErrors.assignment}</small> : null}
-        <select value={vessel.assignedAssistantId} onChange={(e) => update({ assignedAssistantId: e.target.value })}>
-          <option value="">Team responsibility</option>
-          {crewManager?.assistants.map((assistant) => <option key={assistant.id} value={assistant.id}>{assistant.name}</option>)}
-        </select>
       </td>
       <td>
         <select value={vessel.vesselStatus} onChange={(e) => update({ vesselStatus: e.target.value as Vessel['vesselStatus'] })}>

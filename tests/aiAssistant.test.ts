@@ -40,10 +40,11 @@ function action(partial: Partial<AiStructuredAction>): AiStructuredAction {
 const reference = {
   organization: { id: 'org-1' },
   crewDirectors: [{ id: 'director-1', person: { name: 'Amit Kumar' }, operationsManagers: [], updatedAt: now }],
-  operationsManagers: [{ id: 'ops-1', crewDirectorId: 'director-1', person: { name: 'Sidharth Bajaj' }, crewManagers: [], updatedAt: now }],
+  operationsManagers: [{ id: 'ops-1', crewDirectorId: 'director-1', person: { name: 'Sidharth Bajaj' }, deputyManagers: [], updatedAt: now }],
+  deputyManagers: [{ id: 'deputy-1', operationsManagerId: 'ops-1', person: { name: 'Pavan Kesari' }, crewManagers: [], updatedAt: now }],
   crewManagers: [
-    { id: 'cm-1', operationsManagerId: 'ops-1', person: { name: 'Pavan Kesari' }, assistants: [], vesselAllocations: [], updatedAt: now },
-    { id: 'cm-2', operationsManagerId: 'ops-1', person: { name: 'Jinal Kotak' }, assistants: [], vesselAllocations: [], updatedAt: now },
+    { id: 'cm-1', deputyManagerId: 'deputy-1', person: { name: 'Pavan Kesari' }, vesselAllocations: [], updatedAt: now },
+    { id: 'cm-2', deputyManagerId: 'deputy-1', person: { name: 'Jinal Kotak' }, vesselAllocations: [], updatedAt: now },
   ],
   assistants: [{ id: 'assistant-1', crewManagerId: 'cm-1', person: { name: 'Neha Patil' }, updatedAt: now }],
   vessels: [{ id: 'vessel-1', name: 'Oceanic', vesselType: 'Bulk Carrier', vesselAllocations: [{ crewManagerId: 'cm-1', assignedAssistantId: null }], updatedAt: now }],
@@ -89,12 +90,13 @@ describe('AI Assistant safety', () => {
       data: { ...action({}).data, name: 'Ramesh Sharma', parentCrewOperationsManagerName: 'Sidharth Bajaj' },
     }), reference)
     expect(preview.status).toBe('ready')
+    expect(preview.resolvedIds.deputyManagerId).toBe('deputy-1')
   })
 
   it('blocks removing parents with linked children', () => {
     const linkedReference = {
       ...reference,
-      operationsManagers: [{ ...reference.operationsManagers[0], crewManagers: [{ id: 'cm-1' }] }],
+      operationsManagers: [{ ...reference.operationsManagers[0], deputyManagers: [{ id: 'deputy-1' }] }],
     } as AiReferenceData
     const preview = buildAiPreview(action({
       domain: 'organization_chart',
@@ -251,8 +253,8 @@ describe('AI Assistant safety', () => {
     const ambiguousReference = {
       ...reference,
       crewManagers: [
-        ...reference.crewManagers,
-        { id: 'cm-3', operationsManagerId: 'ops-1', person: { name: 'Pavan Kumar' }, assistants: [], vesselAllocations: [], updatedAt: now },
+      ...reference.crewManagers,
+        { id: 'cm-3', deputyManagerId: 'deputy-1', person: { name: 'Pavan Kumar' }, vesselAllocations: [], updatedAt: now },
       ],
     } as AiReferenceData
     const preview = buildAiPreview(action({

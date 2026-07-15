@@ -7,7 +7,7 @@ import {
 } from '../src/state/apiMappers'
 
 describe('api mappers', () => {
-  it('maps operations managers with nested crew managers and preserves backend team ids', () => {
+  it('maps operations managers with nested deputy and crew managers while preserving backend ids', () => {
     const mapped = mapHierarchyResponseToChartState({
       crewDirectors: [{
         id: 'director-9',
@@ -15,47 +15,52 @@ describe('api mappers', () => {
         operationsManagers: [{
           id: 'ops-1',
           person: { id: 'person-1', name: 'Marcus', designation: 'Crew Operations Manager', email: 'ops@example.com' },
-          crewManagers: [{
-            id: 'crew-node-1',
-            person: { id: 'person-2', name: 'Leena', designation: 'Crew Manager', email: 'leena@example.com' },
-            assistants: [],
-            vessels: [{ id: 'vessel-a' }],
+          deputyManagers: [{
+            id: 'deputy-node-1',
+            person: { id: 'person-deputy-1', name: 'Pavan', designation: 'Deputy Crew Manager' },
+            crewManagers: [{
+              id: 'crew-node-1',
+              person: { id: 'person-2', name: 'Leena', designation: 'Crew Manager', email: 'leena@example.com' },
+              vessels: [{ id: 'vessel-a' }],
+            }],
           }],
         }],
       }],
     })
 
+    const deputy = mapped.operationsManagers[0].deputyManagers[0]
     expect(mapped.crewDirectors[0].id).toBe('director-9')
     expect(mapped.operationsManagers[0].id).toBe('ops-1')
     expect(mapped.operationsManagers[0].crewDirectorId).toBe('director-9')
-    expect(mapped.operationsManagers[0].crewManagers[0].id).toBe('crew-node-1')
-    expect(mapped.operationsManagers[0].crewManagers[0].person.id).toBe('person-2')
-    expect(mapped.operationsManagers[0].crewManagers[0].vesselIds).toEqual(['vessel-a'])
+    expect(deputy.id).toBe('deputy-node-1')
+    expect(deputy.crewManagers[0].id).toBe('crew-node-1')
+    expect(deputy.crewManagers[0].person.id).toBe('person-2')
+    expect(deputy.crewManagers[0].vesselIds).toEqual(['vessel-a'])
   })
 
-  it('maps assistants into compact team members', () => {
+  it('wraps legacy operations-manager crew managers under a default deputy manager', () => {
     const mapped = mapHierarchyResponseToChartState({
       crewDirectors: [{
         id: 'director-1',
         person: { name: 'Director' },
         operationsManagers: [{
-          id: 'ops-1',
-          person: { id: 'person-1', name: 'Ops', designation: 'Ops' },
+          id: 'ops-node-1',
+          person: { id: 'person-ops-1', name: 'Ops', designation: 'Crew Operations Manager' },
           crewManagers: [{
-            id: 'crew-node-1',
-            person: { id: 'person-2', name: 'Crew', designation: 'Crew' },
-            assistants: [{ id: 'assistant-node-1', person: { id: 'assistant-person-1', name: 'Noor', designation: 'Assistant Crew Manager' } }],
+            id: 'crew-node-99',
+            person: { id: 'person-cm-7', name: 'Crew', designation: 'Crew Manager' },
             vessels: [],
           }],
         }],
       }],
     })
 
-    expect(mapped.operationsManagers[0].crewManagers[0].assistants[0].id).toBe('assistant-node-1')
-    expect(mapped.operationsManagers[0].crewManagers[0].assistants[0].name).toBe('Noor')
+    expect(mapped.operationsManagers[0].deputyManagers[0].person.workflowRole).toBe('DEPUTY_MANAGER')
+    expect(mapped.operationsManagers[0].deputyManagers[0].crewManagers[0].id).toBe('crew-node-99')
+    expect(mapped.operationsManagers[0].deputyManagers[0].crewManagers[0].person.id).toBe('person-cm-7')
   })
 
-  it('maps vessel allocations from currentAllocation records', () => {
+  it('maps vessel allocations and clears legacy assistant metadata', () => {
     const vessel = mapVesselResponseToVessel({
       id: 'vessel-1',
       name: 'MV Northern Star',
@@ -68,7 +73,7 @@ describe('api mappers', () => {
     }, 1)
 
     expect(vessel.crewManagerId).toBe('crew-node-1')
-    expect(vessel.assignedAssistantId).toBe('assistant-node-1')
+    expect(vessel.assignedAssistantId).toBe('')
   })
 
   it('fills missing optional vessel fields safely', () => {
@@ -76,28 +81,6 @@ describe('api mappers', () => {
     expect(vessel.vesselType).toBe('')
     expect(vessel.ownerName).toBe('')
     expect(vessel.vesselStatus).toBe('UPCOMING')
-  })
-
-  it('keeps backend crew-manager id separate from person id', () => {
-    const mapped = mapHierarchyResponseToChartState({
-      crewDirectors: [{
-        id: 'director-1',
-        person: { name: 'Director' },
-        operationsManagers: [{
-          id: 'ops-node-1',
-          person: { id: 'person-ops-1', name: 'Ops', designation: 'Crew Operations Manager' },
-          crewManagers: [{
-            id: 'crew-node-99',
-            person: { id: 'person-cm-7', name: 'Crew', designation: 'Crew Manager' },
-            assistants: [],
-            vessels: [],
-          }],
-        }],
-      }],
-    })
-
-    expect(mapped.operationsManagers[0].crewManagers[0].id).toBe('crew-node-99')
-    expect(mapped.operationsManagers[0].crewManagers[0].person.id).toBe('person-cm-7')
   })
 
   it('maps chart vessel data back to a stable api payload', () => {

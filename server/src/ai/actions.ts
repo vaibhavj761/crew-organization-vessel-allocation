@@ -8,6 +8,7 @@ type Matchable = { id: string; person?: { name: string }; name?: string }
 type BuildResult = Omit<AiPreviewResponse, 'previewId' | 'providerUsed' | 'fallbackUsed' | 'fallbackReason'> & { resolvedIds: Record<string, string | null> }
 
 const blockedUnsupported = 'I can help only with approved Vessel Master and Organization Chart updates in this version.'
+const assistantUnsupported = 'Assistants are no longer part of the active reporting structure. Use Crew Directors, Crew Operations Managers, Deputy Managers, Crew Managers, and vessel allocations.'
 
 function text(value: string | null | undefined) {
   return value?.trim() || ''
@@ -157,15 +158,17 @@ export function buildAiPreview(action: AiStructuredAction, reference: AiReferenc
       const parent = findByName(reference.operationsManagers, text(action.data.parentCrewOperationsManagerName || action.target.crewOperationsManagerName), 'Crew Operations Manager')
       if (!name) return { ...response('needs_clarification', action, 'Crew Manager name is required.', [], [], 'What is the Crew Manager name?'), ...entityDetails('', 'CrewManager', null) }
       if (parent.status !== 'ready') return { ...response('needs_clarification', action, parent.message, [], [], parent.message), ...entityDetails('', 'CrewManager', null) }
-      if (duplicateUnderParent(reference.crewManagers, parent.item.id, 'operationsManagerId', name)) return { ...response('blocked', action, `Crew Manager "${name}" already exists under ${parent.item.person.name}.`), ...entityDetails('', 'CrewManager', null) }
-      return { ...response('ready', action, `Create Crew Manager ${name} under ${parent.item.person.name}.`, [change('Crew Manager', 'Name', null, name), change('Crew Manager', 'Parent Crew Operations Manager', null, parent.item.person.name)]), resolvedIds: { operationsManagerId: parent.item.id }, ...entityDetails('', 'CrewManager', null) }
+      const deputyManagers = reference.deputyManagers.filter((item) => item.operationsManagerId === parent.item.id)
+      if (deputyManagers.length !== 1) {
+        const question = deputyManagers.length ? `Which Deputy Manager under ${parent.item.person.name} should ${name} report to?` : `Add a Deputy Manager under ${parent.item.person.name} before adding Crew Managers.`
+        return { ...response('needs_clarification', action, question, [], [], question), ...entityDetails('', 'CrewManager', null) }
+      }
+      const deputy = deputyManagers[0]
+      if (duplicateUnderParent(reference.crewManagers, deputy.id, 'deputyManagerId', name)) return { ...response('blocked', action, `Crew Manager "${name}" already exists under ${deputy.person.name}.`), ...entityDetails('', 'CrewManager', null) }
+      return { ...response('ready', action, `Create Crew Manager ${name} under ${deputy.person.name}.`, [change('Crew Manager', 'Name', null, name), change('Crew Manager', 'Parent Deputy Manager', null, deputy.person.name)]), resolvedIds: { deputyManagerId: deputy.id }, ...entityDetails('', 'CrewManager', null) }
     }
     case 'create_assistant': {
-      const parent = findByName(reference.crewManagers, text(action.data.parentCrewManagerName || action.target.crewManagerName), 'Crew Manager')
-      if (!name) return { ...response('needs_clarification', action, 'Assistant name is required.', [], [], 'What is the Assistant name?'), ...entityDetails('', 'Assistant', null) }
-      if (parent.status !== 'ready') return { ...response('needs_clarification', action, parent.message, [], [], parent.message), ...entityDetails('', 'Assistant', null) }
-      if (duplicateUnderParent(reference.assistants, parent.item.id, 'crewManagerId', name)) return { ...response('blocked', action, `Assistant "${name}" already exists under ${parent.item.person.name}.`), ...entityDetails('', 'Assistant', null) }
-      return { ...response('ready', action, `Create Assistant ${name} under ${parent.item.person.name}.`, [change('Assistant', 'Name', null, name), change('Assistant', 'Parent Crew Manager', null, parent.item.person.name)]), resolvedIds: { crewManagerId: parent.item.id }, ...entityDetails('', 'Assistant', null) }
+      return { ...response('blocked', action, assistantUnsupported), ...entityDetails(assistantUnsupported, 'Unsupported', null) }
     }
     default:
       return buildUpdateMoveRemovePreview(action, reference)
@@ -200,7 +203,7 @@ function buildUpdateMoveRemovePreview(action: AiStructuredAction, reference: AiR
       const oldParent = reference.crewDirectors.find((director) => director.id === item.item.crewDirectorId)
       return { ...response('ready', action, `Move ${item.item.person.name} under ${parent.item.person.name}.`, [change('Crew Operations Manager', 'Parent Crew Director', oldParent?.person.name || null, parent.item.person.name)]), resolvedIds: { operationsManagerId: item.item.id, crewDirectorId: parent.item.id }, ...entityDetails('', 'OperationsManager', item.item.id) }
     }
-    if (item.item.crewManagers.length) return { ...response('blocked', action, `Crew Operations Manager ${item.item.person.name} has Crew Managers linked. Remove or move them first.`), ...entityDetails('', 'OperationsManager', item.item.id) }
+    if (item.item.deputyManagers.length) return { ...response('blocked', action, `Crew Operations Manager ${item.item.person.name} has Deputy Managers linked. Remove or move them first.`), ...entityDetails('', 'OperationsManager', item.item.id) }
     return { ...response('ready', action, `Remove Crew Operations Manager ${item.item.person.name}.`, [change('Crew Operations Manager', 'Name', item.item.person.name, null)]), resolvedIds: { operationsManagerId: item.item.id }, ...entityDetails('', 'OperationsManager', item.item.id) }
   }
 
@@ -214,26 +217,20 @@ function buildUpdateMoveRemovePreview(action: AiStructuredAction, reference: AiR
     if (action.action === 'move_crew_manager') {
       const parent = findByName(reference.operationsManagers, text(action.data.newParentCrewOperationsManagerName), 'Crew Operations Manager')
       if (parent.status !== 'ready') return { ...response('needs_clarification', action, parent.message, [], [], parent.message), ...entityDetails('', 'CrewManager', item.item.id) }
-      const oldParent = reference.operationsManagers.find((op) => op.id === item.item.operationsManagerId)
-      return { ...response('ready', action, `Move ${item.item.person.name} under ${parent.item.person.name}.`, [change('Crew Manager', 'Parent Crew Operations Manager', oldParent?.person.name || null, parent.item.person.name)]), resolvedIds: { crewManagerId: item.item.id, operationsManagerId: parent.item.id }, ...entityDetails('', 'CrewManager', item.item.id) }
+      const deputyManagers = reference.deputyManagers.filter((deputy) => deputy.operationsManagerId === parent.item.id)
+      if (deputyManagers.length !== 1) {
+        const question = deputyManagers.length ? `Which Deputy Manager under ${parent.item.person.name} should ${item.item.person.name} report to?` : `Add a Deputy Manager under ${parent.item.person.name} before moving Crew Managers there.`
+        return { ...response('needs_clarification', action, question, [], [], question), ...entityDetails('', 'CrewManager', item.item.id) }
+      }
+      const oldParent = reference.deputyManagers.find((deputy) => deputy.id === item.item.deputyManagerId)
+      const deputy = deputyManagers[0]
+      return { ...response('ready', action, `Move ${item.item.person.name} under ${deputy.person.name}.`, [change('Crew Manager', 'Parent Deputy Manager', oldParent?.person.name || null, deputy.person.name)]), resolvedIds: { crewManagerId: item.item.id, deputyManagerId: deputy.id }, ...entityDetails('', 'CrewManager', item.item.id) }
     }
-    if (item.item.assistants.length || item.item.vesselAllocations.length) return { ...response('blocked', action, `Crew Manager ${item.item.person.name} has Assistants or Vessels linked. Remove or move them first.`), ...entityDetails('', 'CrewManager', item.item.id) }
+    if (item.item.vesselAllocations.length) return { ...response('blocked', action, `Crew Manager ${item.item.person.name} has Vessels linked. Move or unassign them first.`), ...entityDetails('', 'CrewManager', item.item.id) }
     return { ...response('ready', action, `Remove Crew Manager ${item.item.person.name}.`, [change('Crew Manager', 'Name', item.item.person.name, null)]), resolvedIds: { crewManagerId: item.item.id }, ...entityDetails('', 'CrewManager', item.item.id) }
   }
 
-  const assistant = findByName(reference.assistants, targetName, 'Assistant')
-  if (assistant.status !== 'ready') return { ...response('needs_clarification', action, assistant.message, [], [], assistant.message), ...entityDetails('', 'Assistant', null) }
-  if (action.action === 'update_assistant_name') {
-    if (!newName) return { ...response('needs_clarification', action, 'New Assistant name is required.', [], [], 'What should the new name be?'), ...entityDetails('', 'Assistant', assistant.item.id) }
-    return { ...response('ready', action, `Rename Assistant ${assistant.item.person.name} to ${newName}.`, [change('Assistant', 'Name', assistant.item.person.name, newName)]), resolvedIds: { assistantId: assistant.item.id }, ...entityDetails('', 'Assistant', assistant.item.id) }
-  }
-  if (action.action === 'move_assistant') {
-    const parent = findByName(reference.crewManagers, text(action.data.newParentCrewManagerName), 'Crew Manager')
-    if (parent.status !== 'ready') return { ...response('needs_clarification', action, parent.message, [], [], parent.message), ...entityDetails('', 'Assistant', assistant.item.id) }
-    const oldParent = reference.crewManagers.find((cm) => cm.id === assistant.item.crewManagerId)
-    return { ...response('ready', action, `Move ${assistant.item.person.name} under ${parent.item.person.name}.`, [change('Assistant', 'Parent Crew Manager', oldParent?.person.name || null, parent.item.person.name)]), resolvedIds: { assistantId: assistant.item.id, crewManagerId: parent.item.id }, ...entityDetails('', 'Assistant', assistant.item.id) }
-  }
-  return { ...response('ready', action, `Remove Assistant ${assistant.item.person.name}.`, [change('Assistant', 'Name', assistant.item.person.name, null)]), resolvedIds: { assistantId: assistant.item.id }, ...entityDetails('', 'Assistant', assistant.item.id) }
+  return { ...response('blocked', action, assistantUnsupported), ...entityDetails(assistantUnsupported, 'Unsupported', null) }
 }
 
 export async function applyAiPreview(preview: AiPreviewRecord, organizationId: string, userId: string, ipAddress: string | null) {
@@ -280,18 +277,14 @@ export async function applyAiPreview(preview: AiPreviewRecord, organizationId: s
         break
       }
       case 'create_crew_manager': {
-        const parent = await tx.operationsManager.findUniqueOrThrow({ where: { id: ids.operationsManagerId || '' } })
+        const parent = await tx.deputyManager.findUniqueOrThrow({ where: { id: ids.deputyManagerId || '' } })
         const person = await tx.person.create({ data: { organizationId, name: text(data.name), designation: 'Crew Manager', workflowRole: 'CREW_MANAGER' } })
-        const cm = await tx.crewManager.create({ data: { organizationId, operationsManagerId: parent.id, personId: person.id, sortOrder: 0 } })
+        const cm = await tx.crewManager.create({ data: { organizationId, deputyManagerId: parent.id, personId: person.id, sortOrder: 0 } })
         updatedEntity = { type: 'Crew Manager', id: cm.id, name: person.name }
         break
       }
       case 'create_assistant': {
-        const parent = await tx.crewManager.findUniqueOrThrow({ where: { id: ids.crewManagerId || '' } })
-        const person = await tx.person.create({ data: { organizationId, name: text(data.name), designation: 'Assistant Crew Manager', workflowRole: 'ASSISTANT' } })
-        const assistant = await tx.assistant.create({ data: { organizationId, crewManagerId: parent.id, personId: person.id, sortOrder: 0 } })
-        updatedEntity = { type: 'Assistant', id: assistant.id, name: person.name }
-        break
+        throw new Error(assistantUnsupported)
       }
       default:
         updatedEntity = await applyUpdateMoveRemove(tx, action, ids)
@@ -333,28 +326,21 @@ async function applyUpdateMoveRemove(tx: Prisma.TransactionClient, action: AiStr
     const item = await tx.crewManager.findUniqueOrThrow({ where: { id: ids.crewManagerId || '' }, include: { person: true } })
     if (action.action === 'update_crew_manager_name') await tx.person.update({ where: { id: item.personId }, data: { name: newName } })
     if (action.action === 'move_crew_manager') {
-      const parent = await tx.operationsManager.findUniqueOrThrow({ where: { id: ids.operationsManagerId || '' } })
-      await tx.crewManager.update({ where: { id: item.id }, data: { operationsManagerId: parent.id } })
+      const parent = await tx.deputyManager.findUniqueOrThrow({ where: { id: ids.deputyManagerId || '' } })
+      await tx.crewManager.update({ where: { id: item.id }, data: { deputyManagerId: parent.id } })
     }
     if (action.action === 'remove_crew_manager') await tx.crewManager.delete({ where: { id: item.id } })
     return { type: 'Crew Manager', id: item.id, name: newName || item.person.name }
   }
-  const item = await tx.assistant.findUniqueOrThrow({ where: { id: ids.assistantId || '' }, include: { person: true } })
-  if (action.action === 'update_assistant_name') await tx.person.update({ where: { id: item.personId }, data: { name: newName } })
-  if (action.action === 'move_assistant') {
-    const parent = await tx.crewManager.findUniqueOrThrow({ where: { id: ids.crewManagerId || '' } })
-    await tx.assistant.update({ where: { id: item.id }, data: { crewManagerId: parent.id } })
-  }
-  if (action.action === 'remove_assistant') await tx.assistant.delete({ where: { id: item.id } })
-  return { type: 'Assistant', id: item.id, name: newName || item.person.name }
+  throw new Error(assistantUnsupported)
 }
 
 async function snapshotAffected(type: string, id: string | null) {
   if (!id) return null
   if (type.includes('Vessel')) return prisma.vessel.findUnique({ where: { id }, include: { vesselAllocations: true } })
   if (type.includes('CrewDirector')) return prisma.crewDirector.findUnique({ where: { id }, include: { person: true, operationsManagers: true } })
-  if (type.includes('OperationsManager')) return prisma.operationsManager.findUnique({ where: { id }, include: { person: true, crewManagers: true } })
-  if (type.includes('CrewManager')) return prisma.crewManager.findUnique({ where: { id }, include: { person: true, assistants: true, vesselAllocations: true } })
+  if (type.includes('OperationsManager')) return prisma.operationsManager.findUnique({ where: { id }, include: { person: true, deputyManagers: true } })
+  if (type.includes('CrewManager')) return prisma.crewManager.findUnique({ where: { id }, include: { person: true, vesselAllocations: true } })
   if (type.includes('Assistant')) return prisma.assistant.findUnique({ where: { id }, include: { person: true } })
   return null
 }

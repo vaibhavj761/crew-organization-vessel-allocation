@@ -96,8 +96,20 @@ cd server
 npm install
 npm run prisma:generate
 npm run prisma:migrate
+npm run build
+npm run seed:cm-asia:built
 npm run seed:admin
 npm run dev
+```
+
+`npm run prisma:migrate` uses Prisma's deploy command and is the safe command for Neon/local databases with existing data. Use `npm run prisma:migrate:dev` only when intentionally creating a new migration during development.
+
+To reset the operational chart data to the CM Asia hierarchy from the reference chart while keeping users/login data, run:
+
+```bash
+cd server
+npm run build
+npm run seed:cm-asia:built
 ```
 
 ## Checks
@@ -183,6 +195,8 @@ Run migrations from the `server` folder:
 cd server
 npm run prisma:migrate
 ```
+
+Do not confirm a Prisma prompt that says **“All data will be lost”** unless you intentionally want to wipe the complete schema, including users. If Prisma reports drift on Neon because of an unrelated table such as `playing_with_neon`, stop the command and use `npm run prisma:migrate`, which applies existing migrations without resetting the database.
 
 ### How to test APIs manually
 
@@ -368,7 +382,7 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 2. Copy the connection string into `server/.env`.
 3. Make sure it includes `?sslmode=require`.
 4. Do not commit the Neon URL to GitHub.
-5. Run Prisma migrations against Neon with `npm run prisma:migrate` from `server/`.
+5. Run Prisma migrations against Neon with `npm run prisma:migrate` from `server/`. This uses `prisma migrate deploy` and should not ask to reset the schema.
 6. Run `npm run seed:admin` once from `server/`.
 
 ### Deployment checklist
@@ -380,7 +394,7 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 5. Set `FRONTEND_URL` to the exact `https://your-app-name.ondigitalocean.app` URL.
 6. Set `VITE_API_BASE_URL=/api`.
 7. Use the install, build, and run commands listed above.
-8. Run `npm run prisma:migrate` once against Neon.
+8. Run `npm run prisma:migrate` once against Neon. Do not use `npm run prisma:migrate:dev` on production Neon data.
 9. Run `npm run seed:admin` once to create the first admin.
 10. Open the `ondigitalocean.app` URL.
 11. Log in with the seeded admin.

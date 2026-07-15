@@ -186,7 +186,7 @@ export async function organizationRoutes(app: FastifyInstance) {
     const parsed = personSchema.partial().extend({ crewDirectorId: z.string().min(1).optional() }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid operations manager payload', parsed.error.flatten())
     const params = request.params as { id: string }
-    const existing = await prisma.operationsManager.findUnique({ where: { id: params.id }, include: { person: true, crewManagers: true } })
+    const existing = await prisma.operationsManager.findUnique({ where: { id: params.id }, include: { person: true, deputyManagers: true } })
     if (!existing) return notFound(reply, 'Operations manager not found')
     const updated = await prisma.$transaction(async (tx) => {
       if (parsed.data.crewDirectorId && parsed.data.crewDirectorId !== existing.crewDirectorId) {
@@ -207,7 +207,7 @@ export async function organizationRoutes(app: FastifyInstance) {
       if (parsed.data.sortOrder !== undefined) {
         await tx.operationsManager.update({ where: { id: existing.id }, data: { sortOrder: parsed.data.sortOrder } })
       }
-      return tx.operationsManager.findUnique({ where: { id: existing.id }, include: { person: true, crewManagers: true } })
+      return tx.operationsManager.findUnique({ where: { id: existing.id }, include: { person: true, deputyManagers: true } })
     })
     if (!updated) return notFound(reply, 'Operations manager not found')
     await writeAuditLog({ userId: user.id, action: 'operationsManager.update', entityType: 'OperationsManager', entityId: updated.id, beforeJson: existing, afterJson: updated, ipAddress: requestIp(request) })
@@ -218,27 +218,91 @@ export async function organizationRoutes(app: FastifyInstance) {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
     const params = request.params as { id: string }
-    const existing = await prisma.operationsManager.findUnique({ where: { id: params.id }, include: { crewManagers: true, person: true } })
+    const existing = await prisma.operationsManager.findUnique({ where: { id: params.id }, include: { deputyManagers: true, person: true } })
     if (!existing) return notFound(reply, 'Operations manager not found')
-    if (existing.crewManagers.length) return badRequest(reply, 'Move or delete crew managers before deleting this operations manager')
+    if (existing.deputyManagers.length) return badRequest(reply, 'Move or delete deputy managers before deleting this operations manager')
     await prisma.operationsManager.delete({ where: { id: existing.id } })
     await writeAuditLog({ userId: user.id, action: 'operationsManager.delete', entityType: 'OperationsManager', entityId: existing.id, beforeJson: existing, ipAddress: requestIp(request) })
+    return noContent(reply)
+  })
+
+  app.post('/api/deputy-managers', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const parsed = personSchema.extend({ operationsManagerId: z.string().min(1) }).safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, 'Invalid deputy manager payload', parsed.error.flatten())
+    if (parsed.data.workflowRole !== 'DEPUTY_MANAGER') return badRequest(reply, 'workflowRole must be DEPUTY_MANAGER')
+    const org = await getPrimaryOrganization()
+    if (!org) return notFound(reply, 'Organization not configured')
+    const parent = await prisma.operationsManager.findUnique({ where: { id: parsed.data.operationsManagerId } })
+    if (!parent) return notFound(reply, 'Operations manager not found')
+    const createdDeputy = await prisma.$transaction(async (tx) => {
+      const person = await tx.person.create({ data: { organizationId: org.id, name: parsed.data.name, designation: parsed.data.designation, workflowRole: 'DEPUTY_MANAGER', email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
+      return tx.deputyManager.create({ data: { organizationId: org.id, operationsManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
+    })
+    await writeAuditLog({ userId: user.id, action: 'deputyManager.create', entityType: 'DeputyManager', entityId: createdDeputy.id, afterJson: createdDeputy, ipAddress: requestIp(request) })
+    return created(reply, createdDeputy)
+  })
+
+  app.patch('/api/deputy-managers/:id', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const parsed = personSchema.partial().extend({ operationsManagerId: z.string().min(1).optional() }).safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, 'Invalid deputy manager payload', parsed.error.flatten())
+    const params = request.params as { id: string }
+    const existing = await prisma.deputyManager.findUnique({ where: { id: params.id }, include: { person: true, crewManagers: true } })
+    if (!existing) return notFound(reply, 'Deputy manager not found')
+    const updated = await prisma.$transaction(async (tx) => {
+      if (parsed.data.operationsManagerId && parsed.data.operationsManagerId !== existing.operationsManagerId) {
+        await tx.deputyManager.update({ where: { id: existing.id }, data: { operationsManagerId: parsed.data.operationsManagerId } })
+      }
+      if (parsed.data.name || parsed.data.designation || parsed.data.email || parsed.data.phone || parsed.data.notes) {
+        await tx.person.update({
+          where: { id: existing.personId },
+          data: {
+            name: parsed.data.name ?? existing.person.name,
+            designation: parsed.data.designation ?? existing.person.designation,
+            email: parsed.data.email === '' ? null : parsed.data.email ?? existing.person.email,
+            phone: parsed.data.phone === '' ? null : parsed.data.phone ?? existing.person.phone,
+            notes: parsed.data.notes === '' ? null : parsed.data.notes ?? existing.person.notes,
+          },
+        })
+      }
+      if (parsed.data.sortOrder !== undefined) {
+        await tx.deputyManager.update({ where: { id: existing.id }, data: { sortOrder: parsed.data.sortOrder } })
+      }
+      return tx.deputyManager.findUnique({ where: { id: existing.id }, include: { person: true, crewManagers: true } })
+    })
+    if (!updated) return notFound(reply, 'Deputy manager not found')
+    await writeAuditLog({ userId: user.id, action: 'deputyManager.update', entityType: 'DeputyManager', entityId: updated.id, beforeJson: existing, afterJson: updated, ipAddress: requestIp(request) })
+    return reply.send(updated)
+  })
+
+  app.delete('/api/deputy-managers/:id', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const params = request.params as { id: string }
+    const existing = await prisma.deputyManager.findUnique({ where: { id: params.id }, include: { crewManagers: true, person: true } })
+    if (!existing) return notFound(reply, 'Deputy manager not found')
+    if (existing.crewManagers.length) return badRequest(reply, 'Move or delete crew managers before deleting this deputy manager')
+    await prisma.deputyManager.delete({ where: { id: existing.id } })
+    await writeAuditLog({ userId: user.id, action: 'deputyManager.delete', entityType: 'DeputyManager', entityId: existing.id, beforeJson: existing, ipAddress: requestIp(request) })
     return noContent(reply)
   })
 
   app.post('/api/crew-managers', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
-    const parsed = personSchema.extend({ operationsManagerId: z.string().min(1) }).safeParse(request.body)
+    const parsed = personSchema.extend({ deputyManagerId: z.string().min(1) }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid crew manager payload', parsed.error.flatten())
     if (parsed.data.workflowRole !== 'CREW_MANAGER') return badRequest(reply, 'workflowRole must be CREW_MANAGER')
     const org = await getPrimaryOrganization()
     if (!org) return notFound(reply, 'Organization not configured')
-    const parent = await prisma.operationsManager.findUnique({ where: { id: parsed.data.operationsManagerId } })
-    if (!parent) return notFound(reply, 'Operations manager not found')
+    const parent = await prisma.deputyManager.findUnique({ where: { id: parsed.data.deputyManagerId } })
+    if (!parent) return notFound(reply, 'Deputy manager not found')
     const createdManager = await prisma.$transaction(async (tx) => {
       const person = await tx.person.create({ data: { organizationId: org.id, name: parsed.data.name, designation: parsed.data.designation, workflowRole: 'CREW_MANAGER', email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
-      return tx.crewManager.create({ data: { organizationId: org.id, operationsManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
+      return tx.crewManager.create({ data: { organizationId: org.id, deputyManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
     })
     await writeAuditLog({ userId: user.id, action: 'crewManager.create', entityType: 'CrewManager', entityId: createdManager.id, afterJson: createdManager, ipAddress: requestIp(request) })
     return created(reply, createdManager)
@@ -247,14 +311,14 @@ export async function organizationRoutes(app: FastifyInstance) {
   app.patch('/api/crew-managers/:id', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
-    const parsed = personSchema.partial().extend({ operationsManagerId: z.string().min(1).optional() }).safeParse(request.body)
+    const parsed = personSchema.partial().extend({ deputyManagerId: z.string().min(1).optional() }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid crew manager payload', parsed.error.flatten())
     const params = request.params as { id: string }
-    const existing = await prisma.crewManager.findUnique({ where: { id: params.id }, include: { person: true, assistants: true, vesselAllocations: true } })
+    const existing = await prisma.crewManager.findUnique({ where: { id: params.id }, include: { person: true, vesselAllocations: true } })
     if (!existing) return notFound(reply, 'Crew manager not found')
     const updated = await prisma.$transaction(async (tx) => {
-      if (parsed.data.operationsManagerId && parsed.data.operationsManagerId !== existing.operationsManagerId) {
-        await tx.crewManager.update({ where: { id: existing.id }, data: { operationsManagerId: parsed.data.operationsManagerId } })
+      if (parsed.data.deputyManagerId && parsed.data.deputyManagerId !== existing.deputyManagerId) {
+        await tx.crewManager.update({ where: { id: existing.id }, data: { deputyManagerId: parsed.data.deputyManagerId } })
       }
       if (parsed.data.name || parsed.data.designation || parsed.data.email || parsed.data.phone || parsed.data.notes) {
         await tx.person.update({
@@ -271,7 +335,7 @@ export async function organizationRoutes(app: FastifyInstance) {
       if (parsed.data.sortOrder !== undefined) {
         await tx.crewManager.update({ where: { id: existing.id }, data: { sortOrder: parsed.data.sortOrder } })
       }
-      return tx.crewManager.findUnique({ where: { id: existing.id }, include: { person: true, assistants: true, vesselAllocations: true } })
+      return tx.crewManager.findUnique({ where: { id: existing.id }, include: { person: true, vesselAllocations: true } })
     })
     if (!updated) return notFound(reply, 'Crew manager not found')
     await writeAuditLog({ userId: user.id, action: 'crewManager.update', entityType: 'CrewManager', entityId: updated.id, beforeJson: existing, afterJson: updated, ipAddress: requestIp(request) })
@@ -282,10 +346,10 @@ export async function organizationRoutes(app: FastifyInstance) {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
     const params = request.params as { id: string }
-    const existing = await prisma.crewManager.findUnique({ where: { id: params.id }, include: { assistants: true, vesselAllocations: true, person: true } })
+    const existing = await prisma.crewManager.findUnique({ where: { id: params.id }, include: { vesselAllocations: true, person: true } })
     if (!existing) return notFound(reply, 'Crew manager not found')
-    if (existing.assistants.length || existing.vesselAllocations.length) {
-      return badRequest(reply, 'Clear assistants and vessel allocations before deleting this crew manager')
+    if (existing.vesselAllocations.length) {
+      return badRequest(reply, 'Clear vessel allocations before deleting this crew manager')
     }
     await prisma.crewManager.delete({ where: { id: existing.id } })
     await writeAuditLog({ userId: user.id, action: 'crewManager.delete', entityType: 'CrewManager', entityId: existing.id, beforeJson: existing, ipAddress: requestIp(request) })
@@ -295,69 +359,19 @@ export async function organizationRoutes(app: FastifyInstance) {
   app.post('/api/assistants', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
-    const parsed = personSchema.extend({ crewManagerId: z.string().min(1) }).safeParse(request.body)
-    if (!parsed.success) return badRequest(reply, 'Invalid assistant payload', parsed.error.flatten())
-    if (parsed.data.workflowRole !== 'ASSISTANT') return badRequest(reply, 'workflowRole must be ASSISTANT')
-    const org = await getPrimaryOrganization()
-    if (!org) return notFound(reply, 'Organization not configured')
-    const parent = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId } })
-    if (!parent) return notFound(reply, 'Crew manager not found')
-    const createdAssistant = await prisma.$transaction(async (tx) => {
-      const person = await tx.person.create({ data: { organizationId: org.id, name: parsed.data.name, designation: parsed.data.designation, workflowRole: 'ASSISTANT', email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
-      return tx.assistant.create({ data: { organizationId: org.id, crewManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
-    })
-    await writeAuditLog({ userId: user.id, action: 'assistant.create', entityType: 'Assistant', entityId: createdAssistant.id, afterJson: createdAssistant, ipAddress: requestIp(request) })
-    return created(reply, createdAssistant)
+    return badRequest(reply, 'Assistants are no longer part of the active hierarchy. Use Deputy Managers and Crew Managers instead.')
   })
 
   app.patch('/api/assistants/:id', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
-    const parsed = personSchema.partial().extend({ crewManagerId: z.string().min(1).optional() }).safeParse(request.body)
-    if (!parsed.success) return badRequest(reply, 'Invalid assistant payload', parsed.error.flatten())
-    const params = request.params as { id: string }
-    const existing = await prisma.assistant.findUnique({ where: { id: params.id }, include: { person: true, vesselAllocations: true } })
-    if (!existing) return notFound(reply, 'Assistant not found')
-    if (parsed.data.crewManagerId) {
-      const parent = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId } })
-      if (!parent) return notFound(reply, 'Crew manager not found')
-    }
-    const updated = await prisma.$transaction(async (tx) => {
-      if (parsed.data.crewManagerId && parsed.data.crewManagerId !== existing.crewManagerId) {
-        await tx.assistant.update({ where: { id: existing.id }, data: { crewManagerId: parsed.data.crewManagerId } })
-      }
-      if (parsed.data.name || parsed.data.designation || parsed.data.email || parsed.data.phone || parsed.data.notes) {
-        await tx.person.update({
-          where: { id: existing.personId },
-          data: {
-            name: parsed.data.name ?? existing.person.name,
-            designation: parsed.data.designation ?? existing.person.designation,
-            email: parsed.data.email === '' ? null : parsed.data.email ?? existing.person.email,
-            phone: parsed.data.phone === '' ? null : parsed.data.phone ?? existing.person.phone,
-            notes: parsed.data.notes === '' ? null : parsed.data.notes ?? existing.person.notes,
-          },
-        })
-      }
-      if (parsed.data.sortOrder !== undefined) {
-        await tx.assistant.update({ where: { id: existing.id }, data: { sortOrder: parsed.data.sortOrder } })
-      }
-      return tx.assistant.findUnique({ where: { id: existing.id }, include: { person: true, vesselAllocations: true } })
-    })
-    if (!updated) return notFound(reply, 'Assistant not found')
-    await writeAuditLog({ userId: user.id, action: 'assistant.update', entityType: 'Assistant', entityId: updated.id, beforeJson: existing, afterJson: updated, ipAddress: requestIp(request) })
-    return reply.send(updated)
+    return badRequest(reply, 'Assistants are no longer part of the active hierarchy. Use Deputy Managers and Crew Managers instead.')
   })
 
   app.delete('/api/assistants/:id', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
-    const params = request.params as { id: string }
-    const existing = await prisma.assistant.findUnique({ where: { id: params.id }, include: { vesselAllocations: true, person: true } })
-    if (!existing) return notFound(reply, 'Assistant not found')
-    if (existing.vesselAllocations.length) return badRequest(reply, 'Clear vessel assignments before deleting this assistant')
-    await prisma.assistant.delete({ where: { id: existing.id } })
-    await writeAuditLog({ userId: user.id, action: 'assistant.delete', entityType: 'Assistant', entityId: existing.id, beforeJson: existing, ipAddress: requestIp(request) })
-    return noContent(reply)
+    return badRequest(reply, 'Assistants are no longer part of the active hierarchy. Use Deputy Managers and Crew Managers instead.')
   })
 
   app.get('/api/vessels', async (request, reply) => {
@@ -376,12 +390,8 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid vessel payload'), parsed.error.flatten())
     const org = await getPrimaryOrganization()
     if (!org) return notFound(reply, 'Organization not configured')
-    const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId }, include: { assistants: true } })
+    const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId } })
     if (!crewManager) return notFound(reply, 'Crew manager not found')
-    if (parsed.data.assignedAssistantId) {
-      const assistant = crewManager.assistants.find((item) => item.id === parsed.data.assignedAssistantId)
-      if (!assistant) return badRequest(reply, 'Assigned assistant must belong to the selected crew manager')
-    }
     const createdVessel = await prisma.$transaction(async (tx) => {
       const vessel = await tx.vessel.create({
         data: {
@@ -407,12 +417,12 @@ export async function organizationRoutes(app: FastifyInstance) {
         create: {
           vesselId: vessel.id,
           crewManagerId: crewManager.id,
-          assignedAssistantId: parsed.data.assignedAssistantId || null,
+          assignedAssistantId: null,
           allocatedAt: new Date(),
         },
         update: {
           crewManagerId: crewManager.id,
-          assignedAssistantId: parsed.data.assignedAssistantId || null,
+          assignedAssistantId: null,
           allocatedAt: new Date(),
         },
       })
@@ -433,15 +443,8 @@ export async function organizationRoutes(app: FastifyInstance) {
     const currentAllocation = existing.vesselAllocations[0] || null
     const targetCrewManagerId = parsed.data.crewManagerId ?? currentAllocation?.crewManagerId
     if (!targetCrewManagerId) return badRequest(reply, 'Assignment is required.')
-    const crewManager = await prisma.crewManager.findUnique({ where: { id: targetCrewManagerId }, include: { assistants: true } })
+    const crewManager = await prisma.crewManager.findUnique({ where: { id: targetCrewManagerId } })
     if (!crewManager) return notFound(reply, 'Crew manager not found')
-    const targetAssistantId = parsed.data.assignedAssistantId !== undefined
-      ? (parsed.data.assignedAssistantId || null)
-      : (currentAllocation?.crewManagerId === targetCrewManagerId ? currentAllocation?.assignedAssistantId ?? null : null)
-    if (targetAssistantId) {
-      const assistant = crewManager.assistants.find((item) => item.id === targetAssistantId)
-      if (!assistant) return badRequest(reply, 'Assigned assistant must belong to the selected crew manager')
-    }
     const updated = await prisma.$transaction(async (tx) => {
       const vessel = await tx.vessel.update({
         where: { id: existing.id },
@@ -467,12 +470,12 @@ export async function organizationRoutes(app: FastifyInstance) {
         create: {
           vesselId: vessel.id,
           crewManagerId: crewManager.id,
-          assignedAssistantId: targetAssistantId,
+          assignedAssistantId: null,
           allocatedAt: new Date(),
         },
         update: {
           crewManagerId: crewManager.id,
-          assignedAssistantId: targetAssistantId,
+          assignedAssistantId: null,
           allocatedAt: new Date(),
         },
       })
@@ -502,25 +505,20 @@ export async function organizationRoutes(app: FastifyInstance) {
     const params = request.params as { id: string }
     const vessel = await prisma.vessel.findUnique({ where: { id: params.id } })
     if (!vessel) return notFound(reply, 'Vessel not found')
-    const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId }, include: { assistants: true } })
+    const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId } })
     if (!crewManager) return notFound(reply, 'Crew manager not found')
-    const assistantId: string | null = parsed.data.assignedAssistantId || null
-    if (assistantId) {
-      const assistant = crewManager.assistants.find((item) => item.id === assistantId)
-      if (!assistant) return badRequest(reply, 'Assigned assistant must belong to the selected crew manager')
-    }
     const before = await prisma.vesselAllocation.findUnique({ where: { vesselId: vessel.id } })
     const allocation = await prisma.vesselAllocation.upsert({
       where: { vesselId: vessel.id },
       create: {
         vesselId: vessel.id,
         crewManagerId: crewManager.id,
-        assignedAssistantId: assistantId,
+        assignedAssistantId: null,
         allocatedAt: new Date(),
       },
       update: {
         crewManagerId: crewManager.id,
-        assignedAssistantId: assistantId,
+        assignedAssistantId: null,
         allocatedAt: new Date(),
       },
     })
@@ -532,15 +530,15 @@ export async function organizationRoutes(app: FastifyInstance) {
     const user = await requireCurrentUser(request, reply)
     if (!user) return
     const org = await getPrimaryOrganization()
-    if (!org) return reply.send({ organization: null, counts: { crewDirectors: 0, operationsManagers: 0, crewManagers: 0, assistants: 0, vessels: 0 } })
-    const [crewDirectors, operationsManagers, crewManagers, assistants, vessels] = await Promise.all([
+    if (!org) return reply.send({ organization: null, counts: { crewDirectors: 0, operationsManagers: 0, deputyManagers: 0, crewManagers: 0, vessels: 0 } })
+    const [crewDirectors, operationsManagers, deputyManagers, crewManagers, vessels] = await Promise.all([
       prisma.crewDirector.count({ where: { organizationId: org.id } }),
       prisma.operationsManager.count({ where: { organizationId: org.id } }),
+      prisma.deputyManager.count({ where: { organizationId: org.id } }),
       prisma.crewManager.count({ where: { organizationId: org.id } }),
-      prisma.assistant.count({ where: { organizationId: org.id } }),
       prisma.vessel.count({ where: { organizationId: org.id } }),
     ])
-    return reply.send({ organization: org, counts: { crewDirectors, operationsManagers, crewManagers, assistants, vessels } })
+    return reply.send({ organization: org, counts: { crewDirectors, operationsManagers, deputyManagers, crewManagers, vessels } })
   })
 
   app.get('/api/reports/vessel-allocation', async (request, reply) => {

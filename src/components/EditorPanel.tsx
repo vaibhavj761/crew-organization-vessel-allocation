@@ -35,7 +35,7 @@ export function EditorPanel({
   const { data, hasUnsavedChanges } = useChart()
   const director = data.crewDirectors.find((item) => item.id === selectedDirectorId)
   const operationsManager = data.operationsManagers.find((item) => item.id === selectedOperationsManagerId)
-  const crewManager = data.operationsManagers.flatMap((item) => item.crewManagers).find((item) => item.id === selectedCrewManagerId)
+  const crewManager = data.operationsManagers.flatMap((item) => item.deputyManagers.flatMap((deputy) => deputy.crewManagers)).find((item) => item.id === selectedCrewManagerId)
 
   return (
     <aside className="editor-panel">

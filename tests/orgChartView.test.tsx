@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OrgChartView } from '../src/components/OrgChartView'
-import type { ChartData, CrewManagerNode } from '../src/types'
+import type { ChartData, CrewManagerNode, DeputyManagerNode } from '../src/types'
 
 const { chartDataMock } = vi.hoisted(() => ({
   chartDataMock: { current: null as ChartData | null },
@@ -26,8 +26,25 @@ function crewManager(id: string, name: string): CrewManagerNode {
       phone: '',
       notes: '',
     },
-    assistants: [],
     vesselIds: [],
+  }
+}
+
+function deputyManager(operationsManagerId: string, managerCount: number): DeputyManagerNode {
+  return {
+    id: 'deputy-qa',
+    operationsManagerId,
+    sortOrder: 1,
+    person: {
+      id: 'person-deputy-qa',
+      name: 'QA Deputy Manager',
+      designation: 'Deputy Crew Manager',
+      workflowRole: 'DEPUTY_MANAGER',
+      email: '',
+      phone: '',
+      notes: '',
+    },
+    crewManagers: Array.from({ length: managerCount }, (_, index) => crewManager(`cm-${index + 1}`, `Crew Manager ${index + 1}`)),
   }
 }
 
@@ -66,7 +83,7 @@ function makeChartData(managerCount: number): ChartData {
           phone: '',
           notes: '',
         },
-        crewManagers: Array.from({ length: managerCount }, (_, index) => crewManager(`cm-${index + 1}`, `Crew Manager ${index + 1}`)),
+        deputyManagers: [deputyManager('ops-qa', managerCount)],
       },
     ],
     vessels: [],
@@ -86,10 +103,11 @@ describe('OrgChartView deterministic layout', () => {
     expect(container.querySelector('.chart-view--compact-top.org-chart')).toBeTruthy()
     expect(screen.getByText('QA Director')).toBeInTheDocument()
     expect(screen.getByText('QA Operations Manager')).toBeInTheDocument()
+    expect(screen.getByText('QA Deputy Manager')).toBeInTheDocument()
     expect(screen.getByText('Crew Manager 1')).toBeInTheDocument()
     expect(screen.getByText('Crew Manager 2')).toBeInTheDocument()
     expect(screen.getByText('Crew Manager 3')).toBeInTheDocument()
-    expect(container.querySelector('.org-crew-manager-grid.layout-three')).toBeTruthy()
+    expect(container.querySelector('.org-crew-manager-grid.layout-many')).toBeTruthy()
     expect(container.querySelector('.overview-team-grid.layout-three')).toBeFalsy()
   })
 

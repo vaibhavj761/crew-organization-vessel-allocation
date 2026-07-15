@@ -18,7 +18,7 @@ describe('SVG export', () => {
   })
 
   it('exports a selected crew manager allocation focus', () => {
-    const crewManagerId = sampleData.operationsManagers[0].crewManagers[0].id
+    const crewManagerId = sampleData.operationsManagers[0].deputyManagers[0].crewManagers[0].id
     const svg = generateExportSvg(sampleData, { kind: 'manager', crewManagerId })
     expect(svg).toContain('Leena Thomas')
     expect(svg).toContain('MV Northern Star')
@@ -27,7 +27,7 @@ describe('SVG export', () => {
 
   it('summarizes dense vessel data intentionally', () => {
     const data = structuredClone(sampleData)
-    const crewManager = data.operationsManagers[0].crewManagers[0]
+    const crewManager = data.operationsManagers[0].deputyManagers[0].crewManagers[0]
     data.vessels = Array.from({ length: 50 }, (_, index) => ({
       ...data.vessels[0],
       id: `dense-${index}`,
@@ -38,18 +38,17 @@ describe('SVG export', () => {
     }))
 
     const svg = generateExportSvg(data, { kind: 'operations', operationsManagerId: data.operationsManagers[0].id })
-    expect(svg).toContain('more vessels in detailed view')
+    expect(svg).toContain('more vessels')
     expect(svg).not.toContain('NaN')
   })
 
   it('keeps a three-manager team visible in export output', () => {
     const data = structuredClone(sampleData)
     const directorId = data.crewDirectors[0].id
-    data.operationsManagers[0].crewManagers.push({
+    data.operationsManagers[0].deputyManagers[0].crewManagers.push({
       id: 'team-manager-3',
       sortOrder: 3,
       person: { id: 'manager-4', name: 'Sidharth Bajaj', designation: 'Crew Manager', workflowRole: 'CREW_MANAGER', email: '', phone: '', notes: '' },
-      assistants: [],
       vesselIds: [],
     })
     data.vessels.push({

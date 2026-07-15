@@ -7,8 +7,8 @@ import { vesselsApi } from '../api/vessels'
 import { apiClient, ApiError } from '../api/client'
 import {
   describeApiError,
-  mapAssistantToApiPayload,
   mapCrewManagerToApiPayload,
+  mapDeputyManagerToApiPayload,
   mapHierarchyResponseToChartState,
   mapOperationsManagerToApiPayload,
   mapOrganizationResponseToChartState,
@@ -249,10 +249,27 @@ export function ChartProvider({ children }: { children: ReactNode }) {
 
       for (const op of currentOps) {
         const snapOp = snapshotOps.get(op.id)
-        const snapCrew = new Map((snapOp?.crewManagers || []).map((cm) => [cm.id, cm]))
-        for (const cm of op.crewManagers) {
+        const snapDeputies = new Map((snapOp?.deputyManagers || []).map((deputy) => [deputy.id, deputy]))
+        for (const deputy of op.deputyManagers) {
+          if (!snapDeputies.has(deputy.id)) {
+            const created = await hierarchyApi.createDeputyManager({ organizationId, operationsManagerId: op.id, ...mapDeputyManagerToApiPayload(deputy), sortOrder: deputy.sortOrder } as never) as { id?: string; person?: { id?: string } }
+            deputy.id = created.id || deputy.id
+            deputy.person.id = created.person?.id || deputy.person.id
+            deputy.operationsManagerId = op.id
+          } else if (!equalJson({ person: deputy.person, sortOrder: deputy.sortOrder, operationsManagerId: op.id }, { person: snapDeputies.get(deputy.id)?.person, sortOrder: snapDeputies.get(deputy.id)?.sortOrder, operationsManagerId: snapOp?.id })) {
+            await hierarchyApi.updateDeputyManager(deputy.id, { ...mapDeputyManagerToApiPayload(deputy), operationsManagerId: op.id, sortOrder: deputy.sortOrder } as never)
+          }
+        }
+      }
+
+      const currentDeputies = currentOps.flatMap((op) => op.deputyManagers)
+      const snapshotDeputies = new Map((snapshot?.operationsManagers || []).flatMap((op) => op.deputyManagers).map((deputy) => [deputy.id, deputy]))
+      for (const deputy of currentDeputies) {
+        const snapDeputy = snapshotDeputies.get(deputy.id)
+        const snapCrew = new Map((snapDeputy?.crewManagers || []).map((cm) => [cm.id, cm]))
+        for (const cm of deputy.crewManagers) {
           if (!snapCrew.has(cm.id)) {
-            const created = await hierarchyApi.createCrewManager({ organizationId, operationsManagerId: op.id, ...mapCrewManagerToApiPayload(cm), sortOrder: cm.sortOrder } as never) as { id?: string; person?: { id?: string } }
+            const created = await hierarchyApi.createCrewManager({ organizationId, deputyManagerId: deputy.id, ...mapCrewManagerToApiPayload(cm), sortOrder: cm.sortOrder } as never) as { id?: string; person?: { id?: string } }
             const previousCrewManagerId = cm.id
             const previousPersonId = cm.person.id
             cm.id = created.id || cm.id
@@ -262,27 +279,8 @@ export function ChartProvider({ children }: { children: ReactNode }) {
                 vessel.crewManagerId = cm.id
               }
             })
-          } else if (!equalJson({ person: cm.person, sortOrder: cm.sortOrder, operationsManagerId: op.id }, { person: snapCrew.get(cm.id)?.person, sortOrder: snapCrew.get(cm.id)?.sortOrder, operationsManagerId: snapOp?.id })) {
-            await hierarchyApi.updateCrewManager(cm.id, { ...mapCrewManagerToApiPayload(cm), operationsManagerId: op.id, sortOrder: cm.sortOrder } as never)
-          }
-        }
-
-        for (const cm of op.crewManagers) {
-          const snapCm = snapCrew.get(cm.id)
-          const snapAssistants = new Map((snapCm?.assistants || []).map((assistant) => [assistant.id, assistant]))
-          for (const assistant of cm.assistants) {
-            if (!snapAssistants.has(assistant.id)) {
-              const created = await hierarchyApi.createAssistant({ organizationId, crewManagerId: cm.id, ...mapAssistantToApiPayload(assistant) } as never) as { id?: string; person?: { id?: string } }
-              const previousAssistantId = assistant.id
-              assistant.id = created.id || assistant.id
-              workingCopy.vessels.forEach((vessel) => {
-                if (vessel.assignedAssistantId === previousAssistantId) {
-                  vessel.assignedAssistantId = assistant.id
-                }
-              })
-            } else if (!equalJson({ assistant, crewManagerId: cm.id }, { assistant: snapAssistants.get(assistant.id), crewManagerId: snapCm?.id })) {
-              await hierarchyApi.updateAssistant(assistant.id, { crewManagerId: cm.id, ...mapAssistantToApiPayload(assistant) } as never)
-            }
+          } else if (!equalJson({ person: cm.person, sortOrder: cm.sortOrder, deputyManagerId: deputy.id }, { person: snapCrew.get(cm.id)?.person, sortOrder: snapCrew.get(cm.id)?.sortOrder, deputyManagerId: snapDeputy?.id })) {
+            await hierarchyApi.updateCrewManager(cm.id, { ...mapCrewManagerToApiPayload(cm), deputyManagerId: deputy.id, sortOrder: cm.sortOrder } as never)
           }
         }
       }
@@ -300,20 +298,12 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       }
 
       for (const snapOp of snapshot?.operationsManagers || []) {
-        for (const snapCm of snapOp.crewManagers || []) {
-          const currentCm = currentOps.flatMap((op) => op.crewManagers).find((cm) => cm.id === snapCm.id)
-          const currentAssistants = new Map((currentCm?.assistants || []).map((assistant) => [assistant.id, assistant]))
-          for (const assistant of snapCm.assistants || []) {
-            if (!currentAssistants.has(assistant.id)) await hierarchyApi.deleteAssistant(assistant.id)
+        for (const snapDeputy of snapOp.deputyManagers || []) {
+          const currentDeputy = currentDeputies.find((deputy) => deputy.id === snapDeputy.id)
+          const currentCrew = new Map((currentDeputy?.crewManagers || []).map((cm) => [cm.id, cm]))
+          for (const cm of snapDeputy.crewManagers || []) {
+            if (!currentCrew.has(cm.id)) await hierarchyApi.deleteCrewManager(cm.id)
           }
-        }
-      }
-
-      for (const snapOp of snapshot?.operationsManagers || []) {
-        const currentOp = currentOps.find((op) => op.id === snapOp.id)
-        const currentCrew = new Map((currentOp?.crewManagers || []).map((cm) => [cm.id, cm]))
-        for (const cm of snapOp.crewManagers || []) {
-          if (!currentCrew.has(cm.id)) await hierarchyApi.deleteCrewManager(cm.id)
         }
       }
 
@@ -322,6 +312,14 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       }
 
       const currentOpsMap = new Map(currentOps.map((op) => [op.id, op]))
+      for (const snapOp of snapshot?.operationsManagers || []) {
+        const currentOp = currentOpsMap.get(snapOp.id)
+        const currentDeputyMap = new Map((currentOp?.deputyManagers || []).map((deputy) => [deputy.id, deputy]))
+        for (const deputy of snapOp.deputyManagers || []) {
+          if (!currentDeputyMap.has(deputy.id)) await hierarchyApi.deleteDeputyManager(deputy.id)
+        }
+      }
+
       for (const op of snapshot?.operationsManagers || []) {
         if (!currentOpsMap.has(op.id)) await hierarchyApi.deleteOperationsManager(op.id)
       }

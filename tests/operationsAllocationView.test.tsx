@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OperationsAllocationView } from '../src/components/OperationsAllocationView'
-import type { ChartData, CrewManagerNode } from '../src/types'
+import type { ChartData, CrewManagerNode, DeputyManagerNode } from '../src/types'
 
 const { chartDataMock } = vi.hoisted(() => ({
   chartDataMock: { current: null as ChartData | null },
@@ -26,8 +26,25 @@ function crewManager(id: string, name: string): CrewManagerNode {
       phone: '',
       notes: '',
     },
-    assistants: [],
     vesselIds: [],
+  }
+}
+
+function deputyManager(id: string, operationsManagerId: string, crewManagers: CrewManagerNode[]): DeputyManagerNode {
+  return {
+    id,
+    operationsManagerId,
+    sortOrder: 1,
+    person: {
+      id: `${id}-person`,
+      name: id === 'deputy-one' ? 'Deputy One' : 'Deputy Two',
+      designation: 'Deputy Crew Manager',
+      workflowRole: 'DEPUTY_MANAGER',
+      email: '',
+      phone: '',
+      notes: '',
+    },
+    crewManagers,
   }
 }
 
@@ -66,10 +83,12 @@ function makeChartData(): ChartData {
           phone: '',
           notes: '',
         },
-        crewManagers: [
-          crewManager('cm-one', 'Crew Manager One'),
-          crewManager('cm-two', 'Crew Manager Two'),
-          crewManager('cm-three', 'Crew Manager Three'),
+        deputyManagers: [
+          deputyManager('deputy-one', 'ops-sidharth', [
+            crewManager('cm-one', 'Crew Manager One'),
+            crewManager('cm-two', 'Crew Manager Two'),
+            crewManager('cm-three', 'Crew Manager Three'),
+          ]),
         ],
       },
       {
@@ -85,7 +104,7 @@ function makeChartData(): ChartData {
           phone: '',
           notes: '',
         },
-        crewManagers: [],
+        deputyManagers: [],
       },
     ],
     vessels: [],
@@ -100,7 +119,7 @@ describe('OperationsAllocationView blank-canvas protection', () => {
 
   it('shows all three Sidharth-style crew manager cards', () => {
     chartDataMock.current = makeChartData()
-    const { container } = render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" crewManagerId="" />)
+    const { container } = render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" deputyManagerId="" crewManagerId="" />)
 
     expect(container.querySelector('.chart-view--compact-top.operations-allocation-view')).toBeTruthy()
     expect(screen.getAllByText('Sidharth Bajaj').length).toBeGreaterThan(0)
@@ -111,15 +130,15 @@ describe('OperationsAllocationView blank-canvas protection', () => {
 
   it('shows a professional empty state for a Namrata-style operations manager with no teams', () => {
     chartDataMock.current = makeChartData()
-    render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-namrata" crewManagerId="" />)
+    render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-namrata" deputyManagerId="" crewManagerId="" />)
 
     expect(screen.getAllByText('Namrata Joshi').length).toBeGreaterThan(0)
-    expect(screen.getByText('No Crew Managers found under this Crew Operations Manager.')).toBeInTheDocument()
+    expect(screen.getByText('No Deputy Managers found under this Crew Operations Manager.')).toBeInTheDocument()
   })
 
   it('shows a helpful no-match state instead of a blank canvas for stale filters', () => {
     chartDataMock.current = makeChartData()
-    render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="missing-ops" crewManagerId="" />)
+    render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="missing-ops" deputyManagerId="" crewManagerId="" />)
 
     expect(screen.getByText('No matching team found for the selected filters.')).toBeInTheDocument()
   })
