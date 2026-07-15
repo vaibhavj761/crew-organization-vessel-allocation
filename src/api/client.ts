@@ -1,4 +1,4 @@
-const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:8081'
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || (import.meta.env.DEV ? 'http://localhost:8081' : '')
 const inflightGetRequests = new Map<string, Promise<unknown>>()
 let freshDataEpoch = Date.now()
 

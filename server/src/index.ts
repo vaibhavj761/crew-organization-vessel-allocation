@@ -83,6 +83,15 @@ await app.register(aiRoutes)
 const frontendDistDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../dist')
 const indexHtmlPath = path.join(frontendDistDir, 'index.html')
 
+function sendIndexHtml(reply: import('fastify').FastifyReply, html: string) {
+  return reply
+    .header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    .header('Pragma', 'no-cache')
+    .header('Expires', '0')
+    .type('text/html; charset=utf-8')
+    .send(html)
+}
+
 function isApiPath(url: string) {
   return new URL(url, 'http://localhost').pathname.startsWith('/api/')
 }
@@ -121,7 +130,7 @@ app.setNotFoundHandler(async (request, reply) => {
 
   try {
     const html = await readFile(indexHtmlPath, 'utf8')
-    return reply.type('text/html; charset=utf-8').send(html)
+    return sendIndexHtml(reply, html)
   } catch {
     return reply.code(500).send({ message: 'Frontend build not found' })
   }
@@ -130,7 +139,7 @@ app.setNotFoundHandler(async (request, reply) => {
 app.get('/', async (_request, reply) => {
   try {
     const html = await readFile(indexHtmlPath, 'utf8')
-    return reply.type('text/html; charset=utf-8').send(html)
+    return sendIndexHtml(reply, html)
   } catch {
     return reply.code(500).send({ message: 'Frontend build not found' })
   }
