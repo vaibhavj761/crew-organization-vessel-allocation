@@ -25,6 +25,7 @@ export function ExportToolbar({
   const { data } = useChart()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [exportError, setExportError] = useState('')
 
   const currentTarget = useMemo<ExportTarget>(() => {
     if (viewMode === 'overview') {
@@ -42,7 +43,7 @@ export function ExportToolbar({
     }
 
     if (selectedCrewDirectorId) {
-      return { kind: 'director', directorId: selectedCrewDirectorId }
+      return { kind: 'director-allocation', directorId: selectedCrewDirectorId }
     }
 
     return { kind: 'full' }
@@ -52,15 +53,19 @@ export function ExportToolbar({
   const directorTarget: ExportTarget = selectedCrewDirectorId
     ? { kind: 'director', directorId: selectedCrewDirectorId }
     : { kind: 'full' }
+  const directorAllocationTarget: ExportTarget = selectedCrewDirectorId
+    ? { kind: 'director-allocation', directorId: selectedCrewDirectorId }
+    : { kind: 'full' }
   const operationsTarget: ExportTarget = selectedOperationsManagerId
     ? { kind: 'operations', operationsManagerId: selectedOperationsManagerId }
-    : directorTarget
+    : directorAllocationTarget
   const managerTarget: ExportTarget = selectedCrewManagerId
     ? { kind: 'manager', crewManagerId: selectedCrewManagerId }
     : operationsTarget
 
   const run = async (target: ExportTarget, kind: 'png' | 'svg') => {
     setBusy(true)
+    setExportError('')
     markRequested(kind)
     try {
       if (kind === 'png') {
@@ -72,7 +77,7 @@ export function ExportToolbar({
       document.documentElement.dataset.exportStatus = 'error'
       document.documentElement.dataset.exportFilename = kind === 'png' ? 'pending.png' : 'pending.svg'
       document.documentElement.dataset.exportError = error instanceof Error ? error.message : 'Export failed'
-      console.error(error)
+      setExportError(error instanceof Error ? error.message : 'Export failed. Please try again.')
     } finally {
       setBusy(false)
       setOpen(false)
@@ -84,7 +89,7 @@ export function ExportToolbar({
 
   return (
     <div className="export-menu">
-      <button className="button export-button" onClick={() => setOpen((value) => !value)}>
+      <button className="button export-button" onClick={() => setOpen((value) => !value)} disabled={busy} aria-busy={busy}>
         {busy ? 'Preparing…' : 'Export'}
         <ChevronDown size={14} />
       </button>
@@ -93,8 +98,11 @@ export function ExportToolbar({
         <div className="export-popover">
           <div>
             <strong>Export current presentation</strong>
-            <small>16:9 layout · editing controls excluded</small>
+            <small>1920 × 1080 SVG · 3840 × 2160 PNG · controls excluded</small>
           </div>
+
+          {busy ? <p className="export-progress" role="status">Preparing the complete presentation canvas…</p> : null}
+          {exportError ? <p className="export-error" role="alert">{exportError}</p> : null}
 
           <button onClick={() => void run(currentTarget, 'svg')} disabled={busy}>
             <FileType2 size={17} />

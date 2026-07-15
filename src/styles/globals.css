@@ -273,6 +273,9 @@ button:disabled { cursor: not-allowed; opacity: .35; }
 .export-popover button:hover { background: #f1f5f7; }
 .export-popover button span { display: flex; flex-direction: column; }
 .export-popover button strong { color: var(--navy-700); font-size: 10px; }
+.export-progress, .export-error { margin: 7px 4px 3px; padding: 8px 9px; border-radius: 6px; font-size: 10px; line-height: 1.4; }
+.export-progress { color: #315f7d; background: #edf5f9; border: 1px solid #d1e2ec; }
+.export-error { color: #962b24; background: #fff3f1; border: 1px solid #edcbc7; }
 .dialog-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(7,26,46,.45); display: grid; place-items: center; padding: 20px; }
 .dialog { width: min(360px, 100%); background: white; border-radius: 9px; box-shadow: var(--shadow-md); padding: 22px; text-align: center; }
 .warning-icon { margin: 0 auto 9px; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; color: var(--danger); background: #fff0ef; }
@@ -648,4 +651,43 @@ button:disabled { cursor: not-allowed; opacity: .35; }
   .operations-health-list .status-badge { grid-column: 2; }
   .header-actions .compact-button span { display: none; }
   .canvas-toolbar .inline-select, .canvas-toolbar .inline-select select { width: 100%; min-width: 0; }
+}
+
+/* Presentation chart polish: isolated from editor and data-management surfaces. */
+.presentation-frame.view-overview,
+.presentation-frame.view-operations { background: #f6f8fa; border-radius: 12px; scrollbar-color: #a9bbc7 transparent; }
+.chart-view--compact-top { padding: 1.25% 2.4% 1.45%; }
+.chart-view--compact-top .chart-header h1 { white-space: normal; overflow: visible; text-overflow: clip; text-wrap: balance; }
+.chart-view--compact-top .chart-guidance { margin: .55% 0 .7%; border-color: #d9e3e9; background: #f0f5f8; }
+.org-director-section { gap: .55cqw; }
+.org-director-section > .director-row { position: relative; padding: .65% 0 .9%; }
+.org-director-section > .director-row::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 2px; height: .75cqw; background: #9eb1be; }
+.org-director-section > .director-row .person-card { width: min(36%, 410px); border-left-color: #83abc1; box-shadow: 0 .34cqw 1.15cqw rgba(11,36,71,.17); }
+.org-operations-grid { gap: .65cqw; align-items: stretch; }
+.org-operations-section { position: relative; gap: .5cqw; padding: .48cqw; border-color: #cfdae2; border-radius: .7cqw; background: linear-gradient(180deg,#f2f6f8 0%,#ebf1f4 100%); box-shadow: 0 .14cqw .5cqw rgba(11,36,71,.045); }
+.org-operations-section > .operations-heading { min-height: 4.25cqw; margin: 0; padding: .7cqw .78cqw; border: 0; border-radius: .52cqw; color: #fff; background: #173f5a; box-shadow: 0 .15cqw .42cqw rgba(11,36,71,.12); }
+.org-operations-section > .operations-heading strong { color: #fff; font-size: clamp(9px,1cqw,15px); line-height: 1.25; white-space: normal; }
+.org-operations-section > .operations-heading span { color: #d8e6ee; }
+.org-operations-section > .operations-heading b { color: #e9f3f8; background: rgba(255,255,255,.12); }
+.org-deputy-grid { gap: .48cqw; }
+.org-deputy-section { padding: .42cqw; border-color: #bdd0dc; background: rgba(255,255,255,.72); }
+.org-deputy-section .deputy-heading { min-height: 3.55cqw; padding: .52cqw .62cqw; border-radius: .45cqw; background: #2d739d; box-shadow: none; }
+.team-card.structure-card { border: 1px solid #cedbe3; border-left: .28cqw solid #5f8ca7; background: #fff; box-shadow: 0 .12cqw .32cqw rgba(11,36,71,.055); }
+.team-card.structure-card .team-header { min-height: 3.2cqw; padding: .5cqw .62cqw; background: #fff; }
+.team-card.structure-card .team-header h3 { color: #17344c; line-height: 1.25; }
+.team-card.structure-card .vessel-count { background: #e8f0f5; color: #315d78; }
+.operations-allocation-view .deputy-allocation-section { border-color: #ccd9e1; background: #f4f7f9; }
+.operations-allocation-view .names-only-card { border-top-color: #315d78; }
+.operations-allocation-view .vessel-name-pill { transition: border-color .15s ease, background-color .15s ease; }
+.operations-allocation-view .vessel-name-pill:hover { border-color: #adc4d2; background: #eef5f8; }
+.zoom-controls .button:first-child { border-color: #9eb9c9; background: #edf5f9; }
+
+@media (max-width: 1050px) {
+  .org-operations-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .org-director-section > .director-row .person-card { width: min(48%,410px); }
+}
+@media (max-width: 760px) {
+  .chart-view--compact-top { padding: 16px; }
+  .org-operations-grid { grid-template-columns: 1fr; }
+  .org-director-section > .director-row .person-card { width: min(74%,410px); }
 }

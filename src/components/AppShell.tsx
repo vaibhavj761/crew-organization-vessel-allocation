@@ -1,5 +1,5 @@
 import { Bot, Check, Database, LayoutDashboard, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, ShieldCheck, ShipWheel, Sparkles } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME, getPageTitle } from '../constants/app'
 import { useChart } from '../state/ChartContext'
 import type { SafeUser, ViewMode } from '../types'
@@ -44,6 +44,8 @@ export function AppShell({
   const [selectedDeputy, setSelectedDeputy] = useState('')
   const [selectedCrewManager, setSelectedCrewManager] = useState('')
   const [chartZoom, setChartZoom] = useState(1)
+  const canvasStageRef = useRef<HTMLDivElement>(null)
+  const presentationFrameRef = useRef<HTMLDivElement>(null)
   const [aiInitialScope, setAiInitialScope] = useState<AiScope>('auto')
   const showEditorSidebar = canEdit && editorOpen && (viewMode === 'overview' || viewMode === 'operations')
   const readOnly = isReadOnly(user)
@@ -138,6 +140,18 @@ export function AppShell({
     if (loadState !== 'ready') return
     if (!confirmDiscardChanges()) return
     await refreshWorkspaceData('manual-refresh')
+  }
+
+  const fitChartToViewport = () => {
+    const stage = canvasStageRef.current
+    const frame = presentationFrameRef.current
+    if (!stage || !frame) return
+    const availableWidth = Math.max(1, stage.clientWidth - 36)
+    const availableHeight = Math.max(1, stage.clientHeight - 28)
+    const requiredWidth = Math.max(frame.scrollWidth, frame.getBoundingClientRect().width / chartZoom)
+    const requiredHeight = Math.max(frame.scrollHeight, frame.getBoundingClientRect().height / chartZoom)
+    const fitted = Math.min(1, availableWidth / requiredWidth, availableHeight / requiredHeight)
+    setChartZoom(Math.max(0.55, Number(fitted.toFixed(2))))
   }
 
   const handleViewModeChange = (nextView: ViewMode) => {
@@ -334,8 +348,8 @@ export function AppShell({
             )}
             {(viewMode === 'overview' || viewMode === 'operations') && (
               <div className="zoom-controls">
-                <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Fit</button>
-                <button className="button secondary" onClick={() => setChartZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(2))))} disabled={loadState !== 'ready'}>Zoom out</button>
+                <button className="button secondary" aria-label="Fit" title="Fit chart to screen" onClick={fitChartToViewport} disabled={loadState !== 'ready'}>Fit to screen</button>
+                <button className="button secondary" onClick={() => setChartZoom((value) => Math.max(0.55, Number((value - 0.1).toFixed(2))))} disabled={loadState !== 'ready'}>Zoom out</button>
                 <button className="button secondary" onClick={() => setChartZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))} disabled={loadState !== 'ready'}>Zoom in</button>
                 <button className="button secondary" onClick={() => setChartZoom(1)} disabled={loadState !== 'ready'}>Reset</button>
               </div>
@@ -352,9 +366,9 @@ export function AppShell({
           ) : viewMode === 'vessels' ? (
             <VesselMasterTable canEdit={canEdit} />
           ) : (
-            <div className={`canvas-stage ${readOnly ? 'canvas-stage-readonly' : ''}`}>
+            <div ref={canvasStageRef} className={`canvas-stage ${readOnly ? 'canvas-stage-readonly' : ''}`}>
               <div className="presentation-viewport" style={{ zoom: chartZoom }}>
-              <div className={`presentation-frame view-${viewMode}`}>
+              <div ref={presentationFrameRef} className={`presentation-frame view-${viewMode}`}>
                 <ChartErrorBoundary onRetry={() => void refreshPageData()}>
                 {viewMode === 'overview' ? (
                   <OrgChartView selectedDirectorId={selectedDirector} />

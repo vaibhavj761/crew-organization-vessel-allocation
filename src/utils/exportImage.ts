@@ -1,14 +1,112 @@
-import type{ChartData}from'../types';import{generateExportSvg,type ExportTarget}from'./exportSvg'
-declare global{interface Window{__crewOrgLastExport?:{filename:string;mimeType:string;url:string;createdAt:number;status?:'preparing'|'ready'|'error';error?:string}}}
-const mark=(m:Window['__crewOrgLastExport'])=>{document.documentElement.dataset.exportStatus=m?.status||'';document.documentElement.dataset.exportFilename=m?.filename||'';document.documentElement.dataset.exportError=m?.error||'';document.documentElement.dataset.exportUrl=m?.url||''}
-const dl=(b:Blob,n:string)=>{const u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=n;document.body.appendChild(a);a.click();a.remove();mark({filename:n,mimeType:b.type,url:u,createdAt:Date.now(),status:'ready'})}
-const slug=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'team'
-const name=(d:ChartData,t:ExportTarget,e:string)=>t.kind==='full'
-?`crew-org-full-chart.${e}`
-:t.kind==='director'
-?`crew-director-${slug(d.crewDirectors.find(x=>x.id===t.directorId)?.person.name||'team')}-team.${e}`
-:t.kind==='operations'
-?`crew-operations-manager-${slug(d.operationsManagers.find(x=>x.id===t.operationsManagerId)?.person.name||'team')}-team.${e}`
-:`crew-manager-${slug(d.operationsManagers.flatMap(x=>x.deputyManagers.flatMap(deputy=>deputy.crewManagers)).find(x=>x.id===t.crewManagerId)?.person.name||'team')}-allocation.${e}`
-export function exportSvg(d:ChartData,t:ExportTarget){dl(new Blob([generateExportSvg(d,t)],{type:'image/svg+xml'}),name(d,t,'svg'))}
-export async function exportPng(d:ChartData,t:ExportTarget){const n=name(d,t,'png'),svg=generateExportSvg(d,t),u=`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;mark({filename:n,mimeType:'image/png',url:'',createdAt:Date.now(),status:'preparing'});try{if(document.fonts?.ready)await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>r(undefined)));const i=new Image();i.decoding='sync';await new Promise<void>((r,j)=>{i.onload=()=>r();i.onerror=()=>j(new Error('Could not render export image'));i.src=u});if('decode'in i)await i.decode().catch(()=>{});const c=document.createElement('canvas');c.width=3200;c.height=1800;const x=c.getContext('2d');if(!x)throw new Error('PNG export canvas is not available');x.fillStyle='#f7f9fb';x.fillRect(0,0,3200,1800);x.drawImage(i,0,0,3200,1800);const b=await new Promise<Blob|null>(r=>c.toBlob(r,'image/png'));if(!b)throw new Error('Could not encode PNG export');dl(b,n)}catch(error){mark({filename:n,mimeType:'image/png',url:'',createdAt:Date.now(),status:'error',error:error instanceof Error?error.message:'Export failed'});throw error}}
+import type { ChartData } from '../types'
+import { EXPORT_HEIGHT, EXPORT_WIDTH } from './exportLayout'
+import { generateExportSvg, type ExportTarget } from './exportSvg'
+
+declare global {
+  interface Window {
+    __crewOrgLastExport?: {
+      filename: string
+      mimeType: string
+      url: string
+      createdAt: number
+      status?: 'preparing' | 'ready' | 'error'
+      error?: string
+    }
+  }
+}
+
+function markExport(result: Window['__crewOrgLastExport']) {
+  window.__crewOrgLastExport = result
+  document.documentElement.dataset.exportStatus = result?.status || ''
+  document.documentElement.dataset.exportFilename = result?.filename || ''
+  document.documentElement.dataset.exportError = result?.error || ''
+  document.documentElement.dataset.exportUrl = result?.url || ''
+}
+
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  markExport({ filename, mimeType: blob.type, url, createdAt: Date.now(), status: 'ready' })
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'team'
+}
+
+export function getExportFilename(data: ChartData, target: ExportTarget, extension: 'png' | 'svg') {
+  if (target.kind === 'full') return `crew-org-full-chart.${extension}`
+  if (target.kind === 'director' || target.kind === 'director-allocation') {
+    const director = data.crewDirectors.find((item) => item.id === target.directorId)
+    return `crew-director-${slug(director?.person.name || 'team')}-team.${extension}`
+  }
+  if (target.kind === 'operations') {
+    const operationsManager = data.operationsManagers.find((item) => item.id === target.operationsManagerId)
+    return `operations-manager-${slug(operationsManager?.person.name || 'team')}-team.${extension}`
+  }
+  const manager = data.operationsManagers
+    .flatMap((item) => item.deputyManagers.flatMap((deputy) => deputy.crewManagers))
+    .find((item) => item.id === target.crewManagerId)
+  return `crew-manager-${slug(manager?.person.name || 'team')}-allocation.${extension}`
+}
+
+async function waitForRenderReadiness() {
+  if (document.fonts?.ready) await document.fonts.ready
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+}
+
+export function exportSvg(data: ChartData, target: ExportTarget) {
+  const filename = getExportFilename(data, target, 'svg')
+  markExport({ filename, mimeType: 'image/svg+xml', url: '', createdAt: Date.now(), status: 'preparing' })
+  const svg = generateExportSvg(data, target)
+  download(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), filename)
+}
+
+export async function exportPng(data: ChartData, target: ExportTarget) {
+  const filename = getExportFilename(data, target, 'png')
+  markExport({ filename, mimeType: 'image/png', url: '', createdAt: Date.now(), status: 'preparing' })
+  try {
+    await waitForRenderReadiness()
+    const svg = generateExportSvg(data, target)
+    const source = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
+    try {
+      const image = new Image()
+      image.decoding = 'async'
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve()
+        image.onerror = () => reject(new Error('Could not render the complete presentation canvas.'))
+        image.src = source
+      })
+      if ('decode' in image) await image.decode().catch(() => undefined)
+
+      const canvas = document.createElement('canvas')
+      canvas.width = EXPORT_WIDTH * 2
+      canvas.height = EXPORT_HEIGHT * 2
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('PNG export is not supported by this browser.')
+      context.fillStyle = '#f6f8fa'
+      context.fillRect(0, 0, canvas.width, canvas.height)
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 1))
+      if (!blob) throw new Error('The presentation image could not be encoded.')
+      download(blob, filename)
+    } finally {
+      URL.revokeObjectURL(source)
+    }
+  } catch (error) {
+    markExport({
+      filename,
+      mimeType: 'image/png',
+      url: '',
+      createdAt: Date.now(),
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Export failed.',
+    })
+    throw error
+  }
+}

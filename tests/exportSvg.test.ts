@@ -5,7 +5,8 @@ import { generateExportSvg } from '../src/utils/exportSvg'
 describe('SVG export', () => {
   it('exports full overview as a native 16:9 SVG', () => {
     const svg = generateExportSvg(sampleData, { kind: 'full' })
-    expect(svg).toContain('viewBox="0 0 1600 900"')
+    expect(svg).toContain('viewBox="0 0 1920 1080"')
+    expect(svg).toContain('data-export-root="complete-chart"')
     expect(svg).not.toContain('foreignObject')
     expect(svg).not.toContain('Delete')
   })
@@ -25,7 +26,7 @@ describe('SVG export', () => {
     expect(svg).not.toContain('Vikram Menon')
   })
 
-  it('summarizes dense vessel data intentionally', () => {
+  it('includes every vessel in adaptive presentation mode without viewport clipping', () => {
     const data = structuredClone(sampleData)
     const crewManager = data.operationsManagers[0].deputyManagers[0].crewManagers[0]
     data.vessels = Array.from({ length: 50 }, (_, index) => ({
@@ -38,7 +39,10 @@ describe('SVG export', () => {
     }))
 
     const svg = generateExportSvg(data, { kind: 'operations', operationsManagerId: data.operationsManagers[0].id })
-    expect(svg).toContain('more vessels')
+    expect(svg).toContain('data-density="balanced"')
+    expect(svg).toContain('Dense Vessel 0')
+    expect(svg).toContain('Dense Vessel 49')
+    expect(svg).not.toContain('more vessels')
     expect(svg).not.toContain('NaN')
   })
 
@@ -64,5 +68,15 @@ describe('SVG export', () => {
     expect(svg).toContain('Leena Thomas')
     expect(svg).toContain('Vikram Menon')
     expect(svg).toContain('Sidharth Bajaj')
+  })
+
+  it('wraps long identity content safely inside a complete export root', () => {
+    const data = structuredClone(sampleData)
+    data.operationsManagers[0].person.name = 'A Very Long Crew Operations Manager Name Used For Export Safety Testing '.repeat(3).trim()
+    const svg = generateExportSvg(data, { kind: 'full' })
+    expect(svg).toContain('A Very Long Crew Operations Manager')
+    expect(svg).toContain('…')
+    expect(svg).toContain('data-export-root="complete-chart"')
+    expect(svg).not.toContain('overflow="hidden"')
   })
 })
