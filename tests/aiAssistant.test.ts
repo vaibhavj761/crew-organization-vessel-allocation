@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildAiPreview } from '../server/src/ai/actions'
-import { detectPromptDomain, parseLocalAiInstruction, scopeMismatchMessage } from '../server/src/ai/localParser'
+import { buildAiBatchPreview, buildAiPreview } from '../server/src/ai/actions'
+import { detectPromptDomain, parseLocalAiInstruction, parseLocalAiInstructions, scopeMismatchMessage } from '../server/src/ai/localParser'
 import { aiProviderStatus, applyBackendSanityCorrection, categorizeProviderError, parseAiStructuredPayload, runProviderBeforeFallback, selectedAiModel, unsupportedAction } from '../server/src/ai/provider'
 import { deleteAiPreview, getAiPreview, storeAiPreview } from '../server/src/ai/previewStore'
 import { previewLabels } from '../src/components/AiAssistantPage'
 import type { AiReferenceData } from '../server/src/ai/reference'
 import type { AiStructuredAction } from '../server/src/ai/types'
+import { modelAllowedActions, parseAiStructuredPlanPayload } from '../server/src/ai/providers/shared'
 
 const now = new Date()
 
@@ -14,19 +15,23 @@ function action(partial: Partial<AiStructuredAction>): AiStructuredAction {
     domain: 'organization_chart',
     action: 'unsupported',
     confidence: 1,
-    target: { crewDirectorName: null, crewOperationsManagerName: null, crewManagerName: null, assistantName: null, vesselName: null },
+    target: { crewDirectorName: null, crewOperationsManagerName: null, deputyManagerName: null, crewManagerName: null, assistantName: null, vesselName: null },
     data: {
       name: null,
       newName: null,
+      designation: null,
+      newDesignation: null,
       vesselName: null,
       newVesselName: null,
       vesselType: null,
       assignmentCrewManagerName: null,
       parentCrewDirectorName: null,
       parentCrewOperationsManagerName: null,
+      parentDeputyManagerName: null,
       parentCrewManagerName: null,
       newParentCrewDirectorName: null,
       newParentCrewOperationsManagerName: null,
+      newParentDeputyManagerName: null,
       newParentCrewManagerName: null,
     },
     clarifyingQuestion: null,
@@ -39,12 +44,12 @@ function action(partial: Partial<AiStructuredAction>): AiStructuredAction {
 
 const reference = {
   organization: { id: 'org-1' },
-  crewDirectors: [{ id: 'director-1', person: { name: 'Amit Kumar' }, operationsManagers: [], updatedAt: now }],
-  operationsManagers: [{ id: 'ops-1', crewDirectorId: 'director-1', person: { name: 'Sidharth Bajaj' }, deputyManagers: [], updatedAt: now }],
-  deputyManagers: [{ id: 'deputy-1', operationsManagerId: 'ops-1', person: { name: 'Pavan Kesari' }, crewManagers: [], updatedAt: now }],
+  crewDirectors: [{ id: 'director-1', person: { name: 'Amit Kumar', designation: 'Crew Director, Asia' }, operationsManagers: [], updatedAt: now }],
+  operationsManagers: [{ id: 'ops-1', crewDirectorId: 'director-1', person: { name: 'Sidharth Bajaj', designation: 'GM, Mumbai' }, deputyManagers: [], updatedAt: now }],
+  deputyManagers: [{ id: 'deputy-1', operationsManagerId: 'ops-1', person: { name: 'Pavan Kesari', designation: 'Deputy Manager' }, crewManagers: [], updatedAt: now }],
   crewManagers: [
-    { id: 'cm-1', deputyManagerId: 'deputy-1', person: { name: 'Pavan Kesari' }, vesselAllocations: [], updatedAt: now },
-    { id: 'cm-2', deputyManagerId: 'deputy-1', person: { name: 'Jinal Kotak' }, vesselAllocations: [], updatedAt: now },
+    { id: 'cm-1', deputyManagerId: 'deputy-1', person: { name: 'Pavan Kesari', designation: 'Crew Manager' }, vesselAllocations: [], updatedAt: now },
+    { id: 'cm-2', deputyManagerId: 'deputy-1', person: { name: 'Jinal Kotak', designation: 'Crew Manager' }, vesselAllocations: [], updatedAt: now },
   ],
   assistants: [{ id: 'assistant-1', crewManagerId: 'cm-1', person: { name: 'Neha Patil' }, updatedAt: now }],
   vessels: [{ id: 'vessel-1', name: 'Oceanic', vesselType: 'Bulk Carrier', vesselAllocations: [{ crewManagerId: 'cm-1', assignedAssistantId: null }], updatedAt: now }],
@@ -83,6 +88,47 @@ describe('AI Assistant safety', () => {
     expect(preview.status).toBe('blocked')
   })
 
+  it('builds one combined preview for a valid vessel list', () => {
+    const actions = [
+      action({ domain: 'vessel_master', action: 'create_vessel', data: { ...action({}).data, vesselName: 'North Star', vesselType: 'Tanker', assignmentCrewManagerName: 'Pavan Kesari' } }),
+      action({ domain: 'vessel_master', action: 'create_vessel', data: { ...action({}).data, vesselName: 'South Star', vesselType: 'Bulk Carrier', assignmentCrewManagerName: 'Jinal Kotak' } }),
+    ]
+    const preview = buildAiBatchPreview(actions, reference)
+    expect(preview.status).toBe('ready')
+    expect(preview.action).toBe('batch')
+    expect(preview.preparedActions).toHaveLength(2)
+    expect(preview.changes).toHaveLength(6)
+  })
+
+  it('rejects the entire batch when one item is invalid', () => {
+    const actions = [
+      action({ domain: 'vessel_master', action: 'create_vessel', data: { ...action({}).data, vesselName: 'North Star', vesselType: 'Tanker', assignmentCrewManagerName: 'Pavan Kesari' } }),
+      action({ domain: 'vessel_master', action: 'create_vessel', data: { ...action({}).data, vesselName: 'Missing Type', assignmentCrewManagerName: 'Jinal Kotak' } }),
+    ]
+    const preview = buildAiBatchPreview(actions, reference)
+    expect(preview.status).toBe('needs_clarification')
+    expect(preview.summary).toContain('Update 2 of 2')
+    expect(preview.preparedActions).toEqual([])
+    expect(preview.requiresConfirmation).toBe(false)
+  })
+
+  it('blocks duplicate targets within the same batch', () => {
+    const duplicate = action({ domain: 'vessel_master', action: 'create_vessel', data: { ...action({}).data, vesselName: 'North Star', vesselType: 'Tanker', assignmentCrewManagerName: 'Pavan Kesari' } })
+    const preview = buildAiBatchPreview([duplicate, duplicate], reference)
+    expect(preview.status).toBe('blocked')
+    expect(preview.summary).toContain('conflicts with another item')
+    expect(preview.requiresConfirmation).toBe(false)
+  })
+
+  it('allows different validated fields on the same record in one batch', () => {
+    const preview = buildAiBatchPreview([
+      action({ domain: 'vessel_master', action: 'update_vessel_type', target: { ...action({}).target, vesselName: 'Oceanic' }, data: { ...action({}).data, vesselName: 'Oceanic', vesselType: 'Tanker' } }),
+      action({ domain: 'vessel_master', action: 'update_vessel_assignment', target: { ...action({}).target, vesselName: 'Oceanic' }, data: { ...action({}).data, vesselName: 'Oceanic', assignmentCrewManagerName: 'Jinal Kotak' } }),
+    ], reference)
+    expect(preview.status).toBe('ready')
+    expect(preview.preparedActions).toHaveLength(2)
+  })
+
   it('builds organization hierarchy previews', () => {
     const preview = buildAiPreview(action({
       domain: 'organization_chart',
@@ -91,6 +137,25 @@ describe('AI Assistant safety', () => {
     }), reference)
     expect(preview.status).toBe('ready')
     expect(preview.resolvedIds.deputyManagerId).toBe('deputy-1')
+  })
+
+  it('understands the active Deputy Manager hierarchy and designation updates', () => {
+    const createDeputy = parseLocalAiInstruction('Add Deputy Manager Priyanka under Sidharth Bajaj')
+    expect(createDeputy?.action).toBe('create_deputy_manager')
+    const deputyPreview = buildAiPreview(createDeputy!, reference)
+    expect(deputyPreview.status).toBe('ready')
+    expect(deputyPreview.resolvedIds.operationsManagerId).toBe('ops-1')
+
+    const designation = parseLocalAiInstruction('Update Deputy Manager Pavan Kesari designation to Deputy Crew Manager')
+    expect(designation?.action).toBe('update_deputy_manager_designation')
+    const designationPreview = buildAiPreview(designation!, reference)
+    expect(designationPreview.status).toBe('ready')
+    expect(designationPreview.changes).toContainEqual(expect.objectContaining({ field: 'Designation', newValue: 'Deputy Crew Manager' }))
+  })
+
+  it('does not advertise obsolete Assistant mutations to the model', () => {
+    expect(modelAllowedActions.some((item) => item.includes('assistant'))).toBe(false)
+    expect(modelAllowedActions).toContain('create_deputy_manager')
   })
 
   it('blocks removing parents with linked children', () => {
@@ -155,6 +220,20 @@ describe('AI Assistant safety', () => {
     })
     expect(parsed.action).toBe('create_crew_manager')
     expect(parsed.data.parentCrewOperationsManagerName).toBe('Sidharth Bajaj')
+  })
+
+  it('normalizes provider plan payloads and refuses more than 50 actions', () => {
+    const raw = { domain: 'VESSEL_MASTER', action: 'CREATE_VESSEL', target: {}, data: { vesselName: 'North Star', vesselType: 'Tanker', assignmentCrewManagerName: 'Pavan Kesari' }, confidence: 1, summary: 'Create vessel.', warnings: [] }
+    expect(parseAiStructuredPlanPayload({ planSummary: 'Two vessels', actions: [raw, { ...raw, data: { ...raw.data, vesselName: 'South Star' } }] }).actions).toHaveLength(2)
+    const oversized = parseAiStructuredPlanPayload({ actions: Array.from({ length: 51 }, () => raw) })
+    expect(oversized.actions[0].action).toBe('unsupported')
+    expect(oversized.summary).toContain('50')
+  })
+
+  it('parses one deterministic action per line for safe list fallback', () => {
+    const parsed = parseLocalAiInstructions('Add new vessel North Star bulk carrier to Pavan Kesari\nAdd new vessel South Star tanker to Jinal Kotak')
+    expect(parsed).toHaveLength(2)
+    expect(parsed?.every((item) => item.action === 'create_vessel')).toBe(true)
   })
 
   it('parses common vessel commands locally for mock/fallback mode', () => {
@@ -307,8 +386,8 @@ describe('AI Assistant safety', () => {
   it('finishes the configured provider call before evaluating deterministic fallback', async () => {
     const order: string[] = []
     await runProviderBeforeFallback(
-      async () => { order.push('provider-start'); await Promise.resolve(); order.push('provider-end'); return action({ action: 'unsupported' }) },
-      () => { order.push('fallback'); return parseLocalAiInstruction('add assistant Neha under Pavan') },
+      async () => { order.push('provider-start'); await Promise.resolve(); order.push('provider-end'); return [action({ action: 'unsupported' })] },
+      () => { order.push('fallback'); const parsed = parseLocalAiInstruction('add assistant Neha under Pavan'); return parsed ? [parsed] : null },
     )
     expect(order).toEqual(['provider-start', 'provider-end', 'fallback'])
   })

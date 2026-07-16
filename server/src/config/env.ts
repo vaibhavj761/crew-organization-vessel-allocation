@@ -12,6 +12,7 @@ const envBoolean = z.preprocess((value) => {
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(32),
+  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(12),
   PORT: z.coerce.number().int().positive().default(8081),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   COOKIE_SECURE: envBoolean.default(false),
@@ -19,7 +20,7 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url(),
   AI_PROVIDER: z.enum(['openai', 'claude', 'gemini', 'mock', 'none']).default(process.env.NODE_ENV === 'production' ? 'none' : 'mock'),
   OPENAI_API_KEY: z.string().optional().or(z.literal('')),
-  OPENAI_MODEL: z.string().min(1).default('gpt-5.5'),
+  OPENAI_MODEL: z.string().min(1).default('gpt-5-mini'),
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
   CLAUDE_MODEL: z.string().min(1).default('claude-sonnet-5-latest'),
   GEMINI_API_KEY: z.string().optional().or(z.literal('')),

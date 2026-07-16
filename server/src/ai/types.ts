@@ -8,13 +8,21 @@ export const aiActionSchema = z.enum([
   'update_vessel_assignment',
   'create_crew_director',
   'update_crew_director_name',
+  'update_crew_director_designation',
   'remove_crew_director',
   'create_crew_operations_manager',
   'update_crew_operations_manager_name',
+  'update_crew_operations_manager_designation',
   'move_crew_operations_manager',
   'remove_crew_operations_manager',
+  'create_deputy_manager',
+  'update_deputy_manager_name',
+  'update_deputy_manager_designation',
+  'move_deputy_manager',
+  'remove_deputy_manager',
   'create_crew_manager',
   'update_crew_manager_name',
+  'update_crew_manager_designation',
   'move_crew_manager',
   'remove_crew_manager',
   'create_assistant',
@@ -34,6 +42,7 @@ export const aiStructuredActionSchema = z.object({
   target: z.object({
     crewDirectorName: nullableText,
     crewOperationsManagerName: nullableText,
+    deputyManagerName: nullableText,
     crewManagerName: nullableText,
     assistantName: nullableText,
     vesselName: nullableText,
@@ -41,15 +50,19 @@ export const aiStructuredActionSchema = z.object({
   data: z.object({
     name: nullableText,
     newName: nullableText,
+    designation: nullableText,
+    newDesignation: nullableText,
     vesselName: nullableText,
     newVesselName: nullableText,
     vesselType: nullableText,
     assignmentCrewManagerName: nullableText,
     parentCrewDirectorName: nullableText,
     parentCrewOperationsManagerName: nullableText,
+    parentDeputyManagerName: nullableText,
     parentCrewManagerName: nullableText,
     newParentCrewDirectorName: nullableText,
     newParentCrewOperationsManagerName: nullableText,
+    newParentDeputyManagerName: nullableText,
     newParentCrewManagerName: nullableText,
   }),
   clarifyingQuestion: nullableText,
@@ -60,6 +73,10 @@ export const aiStructuredActionSchema = z.object({
 export const aiPreviewStatusSchema = z.enum(['ready', 'needs_clarification', 'blocked', 'not_configured', 'error'])
 
 export type AiStructuredAction = z.infer<typeof aiStructuredActionSchema>
+export type AiStructuredPlan = {
+  summary: string
+  actions: AiStructuredAction[]
+}
 export type AiPreviewStatus = z.infer<typeof aiPreviewStatusSchema>
 export type AiDomain = z.infer<typeof aiDomainSchema>
 export type AiAction = z.infer<typeof aiActionSchema>
@@ -75,7 +92,7 @@ export type AiPreviewResponse = {
   previewId: string | null
   status: AiPreviewStatus
   domain: AiDomain
-  action: AiAction
+  action: AiAction | 'batch'
   summary: string
   confidence: number
   reasoningSummary: string
@@ -89,11 +106,20 @@ export type AiPreviewResponse = {
   errorCategory?: 'missing_key' | 'invalid_key' | 'model_not_found' | 'rate_limit' | 'quota' | 'network' | 'invalid_response' | null
 }
 
+export type AiPreparedAction = {
+  structuredAction: AiStructuredAction
+  resolvedIds: Record<string, string | null>
+  affectedEntityType: string
+  affectedEntityId: string | null
+  summary: string
+}
+
 export type AiPreviewRecord = AiPreviewResponse & {
   previewId: string
   userId: string
   prompt: string
   structuredAction: AiStructuredAction
+  preparedActions?: AiPreparedAction[]
   referenceHash: string
   expiresAt: number
   affectedEntityType: string

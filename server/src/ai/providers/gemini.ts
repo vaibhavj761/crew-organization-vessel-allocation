@@ -1,11 +1,11 @@
 import { env } from '../../config/env.js'
 import type { AiReferenceData } from '../reference.js'
 import type { AiStructuredAction } from '../types.js'
-import { aiInstructionPrompt, allowedActions, allowedDomains, parseAiStructuredPayload, stripJsonFence } from './shared.js'
+import { aiInstructionPrompt, allowedActions, allowedDomains, parseAiStructuredPlanPayload, stripJsonFence } from './shared.js'
 
 type FetchLike = typeof fetch
 
-export async function interpretWithGemini(prompt: string, reference: AiReferenceData, fetchImpl: FetchLike = fetch): Promise<AiStructuredAction> {
+export async function interpretWithGemini(prompt: string, reference: AiReferenceData, fetchImpl: FetchLike = fetch): Promise<AiStructuredAction[]> {
   if (!env.GEMINI_API_KEY) throw new Error('AI Assistant is not configured on this server. Add GEMINI_API_KEY or choose another AI_PROVIDER.')
   const apiKey = env.GEMINI_API_KEY
 
@@ -20,11 +20,11 @@ export async function interpretWithGemini(prompt: string, reference: AiReference
     const errorText = await response.text().catch(() => '')
     if (response.status === 400 && errorText.toLowerCase().includes('schema')) {
       response = await callGemini(false)
-      if (response.ok) return parseAiStructuredPayload(JSON.parse(stripJsonFence(await geminiText(response))))
+      if (response.ok) return parseAiStructuredPlanPayload(JSON.parse(stripJsonFence(await geminiText(response)))).actions
     }
     throw new Error(providerErrorMessage('Gemini', response.status, errorText))
   }
-  return parseAiStructuredPayload(JSON.parse(stripJsonFence(await geminiText(response))))
+  return parseAiStructuredPlanPayload(JSON.parse(stripJsonFence(await geminiText(response)))).actions
 }
 
 function buildBody(prompt: string, reference: AiReferenceData, includeSchema: boolean) {
@@ -34,42 +34,10 @@ function buildBody(prompt: string, reference: AiReferenceData, includeSchema: bo
         responseSchema: {
           type: 'object',
           properties: {
-            domain: { type: 'string', enum: allowedDomains },
-            action: { type: 'string', enum: allowedActions },
-            confidence: { type: 'number' },
-            reasoningSummary: { type: 'string' },
-            target: {
-              type: 'object',
-              properties: {
-                crewDirectorName: { type: 'string', nullable: true },
-                crewOperationsManagerName: { type: 'string', nullable: true },
-                crewManagerName: { type: 'string', nullable: true },
-                assistantName: { type: 'string', nullable: true },
-                vesselName: { type: 'string', nullable: true },
-              },
-            },
-            data: {
-              type: 'object',
-              properties: {
-                name: { type: 'string', nullable: true },
-                newName: { type: 'string', nullable: true },
-                vesselName: { type: 'string', nullable: true },
-                newVesselName: { type: 'string', nullable: true },
-                vesselType: { type: 'string', nullable: true },
-                assignmentCrewManagerName: { type: 'string', nullable: true },
-                parentCrewDirectorName: { type: 'string', nullable: true },
-                parentCrewOperationsManagerName: { type: 'string', nullable: true },
-                parentCrewManagerName: { type: 'string', nullable: true },
-                newParentCrewDirectorName: { type: 'string', nullable: true },
-                newParentCrewOperationsManagerName: { type: 'string', nullable: true },
-                newParentCrewManagerName: { type: 'string', nullable: true },
-              },
-            },
-            clarifyingQuestion: { type: 'string', nullable: true },
-            summary: { type: 'string' },
-            warnings: { type: 'array', items: { type: 'string' } },
+            planSummary: { type: 'string' },
+            actions: { type: 'array', minItems: 1, maxItems: 50, items: actionResponseSchema() },
           },
-          required: ['domain', 'action', 'confidence', 'target', 'data', 'summary', 'warnings'],
+          required: ['planSummary', 'actions'],
         },
       } : {}),
       temperature: 0.1,
@@ -79,6 +47,55 @@ function buildBody(prompt: string, reference: AiReferenceData, includeSchema: bo
       role: 'user',
       parts: [{ text: `${aiInstructionPrompt(reference)}\n\nUser instruction:\n${prompt}` }],
     }],
+  }
+}
+
+function actionResponseSchema() {
+  const nullableText = { type: 'string', nullable: true }
+  return {
+    type: 'object',
+    properties: {
+      domain: { type: 'string', enum: allowedDomains },
+      action: { type: 'string', enum: allowedActions },
+      confidence: { type: 'number' },
+      reasoningSummary: { type: 'string' },
+      target: {
+        type: 'object',
+        properties: {
+          crewDirectorName: nullableText,
+          crewOperationsManagerName: nullableText,
+          deputyManagerName: nullableText,
+          crewManagerName: nullableText,
+          assistantName: nullableText,
+          vesselName: nullableText,
+        },
+      },
+      data: {
+        type: 'object',
+        properties: {
+          name: nullableText,
+          newName: nullableText,
+          designation: nullableText,
+          newDesignation: nullableText,
+          vesselName: nullableText,
+          newVesselName: nullableText,
+          vesselType: nullableText,
+          assignmentCrewManagerName: nullableText,
+          parentCrewDirectorName: nullableText,
+          parentCrewOperationsManagerName: nullableText,
+          parentDeputyManagerName: nullableText,
+          parentCrewManagerName: nullableText,
+          newParentCrewDirectorName: nullableText,
+          newParentCrewOperationsManagerName: nullableText,
+          newParentDeputyManagerName: nullableText,
+          newParentCrewManagerName: nullableText,
+        },
+      },
+      clarifyingQuestion: nullableText,
+      summary: { type: 'string' },
+      warnings: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['domain', 'action', 'confidence', 'target', 'data', 'summary', 'warnings'],
   }
 }
 

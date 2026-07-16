@@ -371,7 +371,7 @@ export function AppShell({
               <div ref={presentationFrameRef} className={`presentation-frame view-${viewMode}`}>
                 <ChartErrorBoundary onRetry={() => void refreshPageData()}>
                 {viewMode === 'overview' ? (
-                  <OrgChartView selectedDirectorId={selectedDirector} />
+                  <OrgChartView selectedDirectorId={selectedDirector} canEdit={canEdit} />
                 ) : (
                   <OperationsAllocationView crewDirectorId={selectedDirector} operationsManagerId={selectedOps} deputyManagerId={selectedDeputy} crewManagerId={selectedCrewManager} />
                 )}

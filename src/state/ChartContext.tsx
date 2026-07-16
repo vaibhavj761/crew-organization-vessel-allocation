@@ -1,5 +1,5 @@
 import { createContext, type Dispatch, type ReactNode, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import type { ChartData } from '../types'
+import type { ChartData, Person } from '../types'
 import { chartReducer, type ChartAction } from './chartReducer'
 import { hierarchyApi } from '../api/hierarchy'
 import { organizationApi } from '../api/organization'
@@ -56,8 +56,15 @@ interface ChartContextValue {
   errorMessage: string
   syncNotice: string
   saveChanges: () => Promise<void>
+  saveHierarchyPerson: (target: HierarchyPersonTarget, person: Person) => Promise<void>
   refreshWorkspaceData: (reason: WorkspaceRefreshReason) => Promise<void>
 }
+
+export type HierarchyPersonTarget =
+  | { kind: 'crewDirector'; id: string }
+  | { kind: 'operationsManager'; id: string }
+  | { kind: 'deputyManager'; id: string; operationsManagerId: string }
+  | { kind: 'crewManager'; id: string; deputyManagerId: string }
 
 const ChartContext = createContext<ChartContextValue | null>(null)
 
@@ -76,6 +83,21 @@ function toApiDateTime(date: string) {
 function normalizeApiError(error: unknown, fallback: string) {
   if (error instanceof ApiError) return describeApiError(error)
   return error instanceof Error ? error.message : fallback
+}
+
+function personFromApiResponse(response: unknown, fallback: Person): Person {
+  const value = (response as { person?: Partial<Person> } | null)?.person
+  return {
+    ...fallback,
+    ...value,
+    id: value?.id || fallback.id,
+    name: value?.name?.trim() || fallback.name,
+    designation: value?.designation?.trim() || fallback.designation,
+    email: value?.email || '',
+    phone: value?.phone || '',
+    notes: value?.notes || '',
+    workflowRole: fallback.workflowRole,
+  }
 }
 
 function logRefresh(reason: WorkspaceRefreshReason) {
@@ -365,9 +387,62 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     syncingRef.current = false
   }, [data, loadState, syncToServer])
 
+  const saveHierarchyPerson = useCallback(async (target: HierarchyPersonTarget, person: Person) => {
+    if (loadState !== 'ready' || syncingRef.current) {
+      throw new Error('Please wait for the current workspace operation to finish.')
+    }
+    if (snapshotRef.current && !equalJson(snapshotRef.current, data)) {
+      throw new Error('Save or refresh your other pending changes before editing directly on the chart.')
+    }
+
+    const normalizedPerson = {
+      ...person,
+      name: person.name.trim(),
+      designation: person.designation.trim(),
+    }
+    if (!normalizedPerson.name) throw new Error('Name is required.')
+    if (!normalizedPerson.designation) throw new Error('Designation is required.')
+
+    syncingRef.current = true
+    setSaveState('saving')
+    setErrorMessage('')
+    setSyncNotice('Saving chart update…')
+    try {
+      let response: unknown
+      let action: ChartAction
+      if (target.kind === 'crewDirector') {
+        response = await hierarchyApi.updateCrewDirector(target.id, normalizedPerson as never)
+        action = { type: 'updateCrewDirector', id: target.id, value: personFromApiResponse(response, normalizedPerson) as never }
+      } else if (target.kind === 'operationsManager') {
+        response = await hierarchyApi.updateOperationsManager(target.id, normalizedPerson)
+        action = { type: 'updateOperationsManager', id: target.id, value: personFromApiResponse(response, normalizedPerson) as never }
+      } else if (target.kind === 'deputyManager') {
+        response = await hierarchyApi.updateDeputyManager(target.id, normalizedPerson)
+        action = { type: 'updateDeputyManager', operationsManagerId: target.operationsManagerId, id: target.id, value: personFromApiResponse(response, normalizedPerson) as never }
+      } else {
+        response = await hierarchyApi.updateCrewManager(target.id, normalizedPerson)
+        action = { type: 'updateCrewManager', deputyManagerId: target.deputyManagerId, id: target.id, value: personFromApiResponse(response, normalizedPerson) as never }
+      }
+
+      if (snapshotRef.current) snapshotRef.current = chartReducer(snapshotRef.current, action)
+      reducerDispatch(action)
+      apiClient.clearGetRequestCache()
+      setSaveState('saved')
+      setSyncNotice('Saved to database')
+    } catch (error) {
+      const message = normalizeApiError(error, 'Failed to save chart update')
+      setSaveState('error')
+      setErrorMessage(message)
+      setSyncNotice('')
+      throw new Error(message)
+    } finally {
+      syncingRef.current = false
+    }
+  }, [data, loadState])
+
   const value = useMemo(
-    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, refreshWorkspaceData }),
-    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, refreshWorkspaceData],
+    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, refreshWorkspaceData }),
+    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, refreshWorkspaceData],
   )
 
   return <ChartContext.Provider value={value}>{children}</ChartContext.Provider>

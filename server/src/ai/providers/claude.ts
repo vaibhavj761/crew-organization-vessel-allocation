@@ -1,21 +1,21 @@
 import { env } from '../../config/env.js'
 import type { AiReferenceData } from '../reference.js'
 import type { AiStructuredAction } from '../types.js'
-import { aiInstructionPrompt, aiJsonShape, parseAiStructuredPayload, stripJsonFence } from './shared.js'
+import { aiInstructionPrompt, aiPlanJsonShape, parseAiStructuredPlanPayload, stripJsonFence } from './shared.js'
 
 type FetchLike = typeof fetch
 
-export async function interpretWithClaude(prompt: string, reference: AiReferenceData, fetchImpl: FetchLike = fetch): Promise<AiStructuredAction> {
+export async function interpretWithClaude(prompt: string, reference: AiReferenceData, fetchImpl: FetchLike = fetch): Promise<AiStructuredAction[]> {
   if (!env.ANTHROPIC_API_KEY) throw new Error('AI Assistant is not configured on this server. Add ANTHROPIC_API_KEY or choose another AI_PROVIDER.')
   const apiKey = env.ANTHROPIC_API_KEY
 
   const response = await callClaude(prompt, reference, apiKey, fetchImpl)
   const content = extractClaudeText(response)
   try {
-    return parseAiStructuredPayload(JSON.parse(stripJsonFence(content)))
+    return parseAiStructuredPlanPayload(JSON.parse(stripJsonFence(content))).actions
   } catch {
     const repaired = await repairClaudeJson(prompt, reference, content, apiKey, fetchImpl)
-    return parseAiStructuredPayload(repaired)
+    return parseAiStructuredPlanPayload(repaired).actions
   }
 }
 
@@ -29,7 +29,7 @@ async function callClaude(prompt: string, reference: AiReferenceData, apiKey: st
     },
     body: JSON.stringify({
       model: env.CLAUDE_MODEL,
-      max_tokens: 1200,
+      max_tokens: 8192,
       temperature: 0.1,
       system: aiInstructionPrompt(reference),
       messages: [{ role: 'user', content: `User instruction:\n${prompt}` }],
@@ -52,9 +52,9 @@ async function repairClaudeJson(prompt: string, reference: AiReferenceData, inva
     },
     body: JSON.stringify({
       model: env.CLAUDE_MODEL,
-      max_tokens: 1200,
+      max_tokens: 8192,
       temperature: 0,
-      system: `${aiInstructionPrompt(reference)}\nReturn valid JSON only matching this shape:\n${JSON.stringify(aiJsonShape())}`,
+      system: `${aiInstructionPrompt(reference)}\nReturn valid JSON only matching this shape:\n${JSON.stringify(aiPlanJsonShape())}`,
       messages: [{ role: 'user', content: `Repair this invalid AI output into the required JSON object.\n\nOriginal user instruction:\n${prompt}\n\nInvalid output:\n${invalidContent}` }],
     }),
   })

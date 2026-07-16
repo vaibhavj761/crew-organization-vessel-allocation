@@ -2,11 +2,12 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../db/prisma.js'
 import { hashPassword, verifyPassword } from '../utils/password.js'
-import { clearAuthCookie, setAuthCookie } from '../utils/session.js'
+import { authSessionVersion, clearAuthCookie, setAuthCookie } from '../utils/session.js'
 import { toSafeUser } from '../utils/safeUser.js'
 import { consumePasswordToken, createPasswordToken } from '../services/passwordTokens.js'
 import { requestIp, writeAuditLog } from '../services/audit.js'
 import { getCurrentUserWithReason, roleChangedReloginCode } from '../auth/context.js'
+import { env } from '../config/env.js'
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -44,7 +45,10 @@ export async function authRoutes(app: FastifyInstance) {
     if (!ok) return reply.code(401).send({ message: 'Invalid email or password' })
 
     const updated = await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-    const token = await reply.jwtSign({ sub: updated.id, pv: updated.permissionVersion }, { sign: { expiresIn: '7d' } })
+    const token = await reply.jwtSign(
+      { sub: updated.id, pv: updated.permissionVersion, sv: authSessionVersion },
+      { sign: { expiresIn: env.SESSION_TTL_HOURS * 60 * 60 } },
+    )
     setAuthCookie(reply, token)
     return reply.send({ user: toSafeUser(updated) })
   })

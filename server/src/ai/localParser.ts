@@ -5,6 +5,7 @@ export type AiScope = 'auto' | 'vessel_master' | 'organization_chart'
 const emptyTarget = {
   crewDirectorName: null,
   crewOperationsManagerName: null,
+  deputyManagerName: null,
   crewManagerName: null,
   assistantName: null,
   vesselName: null,
@@ -13,15 +14,19 @@ const emptyTarget = {
 const emptyData = {
   name: null,
   newName: null,
+  designation: null,
+  newDesignation: null,
   vesselName: null,
   newVesselName: null,
   vesselType: null,
   assignmentCrewManagerName: null,
   parentCrewDirectorName: null,
   parentCrewOperationsManagerName: null,
+  parentDeputyManagerName: null,
   parentCrewManagerName: null,
   newParentCrewDirectorName: null,
   newParentCrewOperationsManagerName: null,
+  newParentDeputyManagerName: null,
   newParentCrewManagerName: null,
 }
 
@@ -45,7 +50,7 @@ function action(input: Partial<AiStructuredAction> & Pick<AiStructuredAction, 'd
 export function detectPromptDomain(prompt: string): AiDomain | null {
   const text = prompt.toLowerCase()
   if (/\b(vessel|ship|bulk carrier|container|tanker|lng|lpg|assign(?:ment)?(?: it)? to|vessel type|handle|give to|should get)\b/.test(text)) return 'vessel_master'
-  if (/\b(crew director|crew operations manager|operations manager|crew manager|assistant)\b/.test(text)) return 'organization_chart'
+  if (/\b(crew director|crew operations manager|operations manager|deputy manager|deputy crew manager|crew manager|assistant)\b/.test(text)) return 'organization_chart'
   return null
 }
 
@@ -263,6 +268,48 @@ export function parseLocalAiInstruction(prompt: string): AiStructuredAction | nu
     })
   }
 
+  const createDeputy = text.match(/^(?:add|create)(?: one)? (?:deputy manager|deputy crew manager)(?: named)?\s+(.+?)\s+(?:under|below)\s+(?:crew operations manager\s+)?(.+?)\.?$/i)
+  if (createDeputy) {
+    return action({
+      domain: 'organization_chart',
+      action: 'create_deputy_manager',
+      data: { ...emptyData, name: clean(createDeputy[1]), parentCrewOperationsManagerName: clean(createDeputy[2]) },
+      summary: `Create Deputy Manager ${clean(createDeputy[1])}.`,
+    })
+  }
+
+  const updateDesignation = text.match(/^(?:change|update|set) (crew director|crew operations manager|operations manager|deputy manager|deputy crew manager|crew manager)\s+(.+?)\s+(?:designation|title)\s+to\s+(.+?)\.?$/i)
+  if (updateDesignation) {
+    const role = updateDesignation[1].toLowerCase()
+    const personName = clean(updateDesignation[2])
+    const newDesignation = clean(updateDesignation[3])
+    if (role === 'crew director') return action({ domain: 'organization_chart', action: 'update_crew_director_designation', target: { ...emptyTarget, crewDirectorName: personName }, data: { ...emptyData, newDesignation }, summary: `Update the designation for ${personName}.` })
+    if (role.includes('operations')) return action({ domain: 'organization_chart', action: 'update_crew_operations_manager_designation', target: { ...emptyTarget, crewOperationsManagerName: personName }, data: { ...emptyData, newDesignation }, summary: `Update the designation for ${personName}.` })
+    if (role.includes('deputy')) return action({ domain: 'organization_chart', action: 'update_deputy_manager_designation', target: { ...emptyTarget, deputyManagerName: personName }, data: { ...emptyData, newDesignation }, summary: `Update the designation for ${personName}.` })
+    return action({ domain: 'organization_chart', action: 'update_crew_manager_designation', target: { ...emptyTarget, crewManagerName: personName }, data: { ...emptyData, newDesignation }, summary: `Update the designation for ${personName}.` })
+  }
+
+  const renameDeputy = text.match(/^rename (?:deputy manager|deputy crew manager)\s+(.+?)\s+to\s+(.+?)\.?$/i)
+  if (renameDeputy) {
+    return action({
+      domain: 'organization_chart',
+      action: 'update_deputy_manager_name',
+      target: { ...emptyTarget, deputyManagerName: clean(renameDeputy[1]) },
+      data: { ...emptyData, newName: clean(renameDeputy[2]) },
+      summary: `Rename Deputy Manager ${clean(renameDeputy[1])}.`,
+    })
+  }
+
+  const createCrewManagerUnderDeputy = text.match(/^add crew manager\s+(.+?)\s+under (?:deputy manager\s+)?(.+?)\.?$/i)
+  if (createCrewManagerUnderDeputy && !/crew operations manager/i.test(text)) {
+    return action({
+      domain: 'organization_chart',
+      action: 'create_crew_manager',
+      data: { ...emptyData, name: clean(createCrewManagerUnderDeputy[1]), parentDeputyManagerName: clean(createCrewManagerUnderDeputy[2]) },
+      summary: `Create Crew Manager ${clean(createCrewManagerUnderDeputy[1])}.`,
+    })
+  }
+
   const createCrewManager = text.match(/^add crew manager\s+(.+?)\s+under crew operations manager\s+(.+?)\.?$/i)
   if (createCrewManager) {
     return action({
@@ -340,4 +387,17 @@ export function parseLocalAiInstruction(prompt: string): AiStructuredAction | nu
   }
 
   return null
+}
+
+export function parseLocalAiInstructions(prompt: string): AiStructuredAction[] | null {
+  const normalizedLines = prompt
+    .split(/\r?\n|;/)
+    .map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim())
+    .filter(Boolean)
+  if (normalizedLines.length <= 1) {
+    const single = parseLocalAiInstruction(prompt)
+    return single ? [single] : null
+  }
+  const actions = normalizedLines.slice(0, 50).map(parseLocalAiInstruction)
+  return actions.every((item): item is AiStructuredAction => Boolean(item)) ? actions : null
 }

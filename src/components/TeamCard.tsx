@@ -2,6 +2,7 @@ import type { CrewManagerNode, Vessel } from '../types'
 import { getVesselColumnCount } from '../utils/operationsAllocation'
 import { getViewportVesselColumnCount } from '../utils/chartLayout'
 import { VesselTag } from './VesselTag'
+import { Pencil } from 'lucide-react'
 
 export function TeamCard({
   team,
@@ -10,6 +11,7 @@ export function TeamCard({
   allocation = false,
   vesselNamesOnly = false,
   showVessels = true,
+  onEdit,
 }: {
   team: CrewManagerNode
   vessels: Vessel[]
@@ -17,6 +19,7 @@ export function TeamCard({
   allocation?: boolean
   vesselNamesOnly?: boolean
   showVessels?: boolean
+  onEdit?: () => void
 }) {
   const visible = vesselNamesOnly ? vessels : vessels.slice(0, compact ? 3 : 12)
   const vesselColumns = vesselNamesOnly ? getVesselColumnCount(vessels.length) : allocation ? 2 : getViewportVesselColumnCount(vessels.length)
@@ -25,6 +28,7 @@ export function TeamCard({
   return (
     <article className={`team-card ${allocation ? 'allocation-card' : ''} ${vesselNamesOnly ? 'names-only-card' : ''} ${showVessels ? '' : 'structure-card'} vessels-${Math.min(vesselColumns, 3)}`}>
       <header className="team-header">
+        {onEdit ? <button type="button" className="chart-inline-edit" onClick={onEdit} aria-label={`Edit ${team.person.name}`} title="Edit name and designation"><Pencil size={12} /></button> : null}
         <div className="manager-avatar">{team.person.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase()}</div>
         <div className="team-header-copy">
           <h3>{team.person.name || 'Unnamed manager'}</h3>

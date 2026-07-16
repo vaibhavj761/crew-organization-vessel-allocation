@@ -12,7 +12,7 @@ export const aiApi = {
     })
   },
   confirmPreview(previewId: string) {
-    return apiClient.request<{ status: 'success'; message: string; updatedEntity: { type: string; id: string; name: string } }>('/api/ai/confirm', {
+    return apiClient.request<{ status: 'success'; message: string; updatedEntity: { type: string; id: string; name: string; items?: Array<{ type: string; id: string; name: string }> } }>('/api/ai/confirm', {
       method: 'POST',
       body: JSON.stringify({ previewId }),
     })

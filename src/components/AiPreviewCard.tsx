@@ -67,7 +67,7 @@ export function AiPreviewCard({
       {preview.warnings.length ? <div className="ai-warning-list"><strong>Review notes</strong><ul>{preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div> : null}
 
       <footer className="ai-confirm-row">
-        <div className="ai-confirm-note"><ShieldCheck size={15} /><span>Nothing is saved until you confirm this preview.</span></div>
+        <div className="ai-confirm-note"><ShieldCheck size={15} /><span>Nothing is saved until you confirm. Batch previews are applied all-or-nothing.</span></div>
         <button className="button secondary" type="button" onClick={onCancel} disabled={busy}><XCircle size={14} />Cancel</button>
         <button className="button" type="button" onClick={onConfirm} disabled={busy || !canConfirm}><CheckCircle2 size={14} />{busy ? 'Applying…' : 'Confirm update'}</button>
       </footer>

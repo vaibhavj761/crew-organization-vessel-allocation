@@ -60,6 +60,30 @@ async function waitForRenderReadiness() {
   await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 }
 
+function loadExportImage(source: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('The browser could not render the presentation image.'))
+    image.src = source
+  })
+}
+
+async function renderSvgImage(svg: string) {
+  const objectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
+  try {
+    return await loadExportImage(objectUrl)
+  } catch {
+    // A restrictive proxy or browser policy may reject blob image sources even
+    // though a data image is permitted. Keep a second, self-contained path so
+    // production export does not depend on blob rendering alone.
+    return loadExportImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 export function exportSvg(data: ChartData, target: ExportTarget) {
   const filename = getExportFilename(data, target, 'svg')
   markExport({ filename, mimeType: 'image/svg+xml', url: '', createdAt: Date.now(), status: 'preparing' })
@@ -73,31 +97,20 @@ export async function exportPng(data: ChartData, target: ExportTarget) {
   try {
     await waitForRenderReadiness()
     const svg = generateExportSvg(data, target)
-    const source = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
-    try {
-      const image = new Image()
-      image.decoding = 'async'
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve()
-        image.onerror = () => reject(new Error('Could not render the complete presentation canvas.'))
-        image.src = source
-      })
-      if ('decode' in image) await image.decode().catch(() => undefined)
+    const image = await renderSvgImage(svg)
+    if ('decode' in image) await image.decode().catch(() => undefined)
 
-      const canvas = document.createElement('canvas')
-      canvas.width = EXPORT_WIDTH * 2
-      canvas.height = EXPORT_HEIGHT * 2
-      const context = canvas.getContext('2d')
-      if (!context) throw new Error('PNG export is not supported by this browser.')
-      context.fillStyle = '#f6f8fa'
-      context.fillRect(0, 0, canvas.width, canvas.height)
-      context.drawImage(image, 0, 0, canvas.width, canvas.height)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 1))
-      if (!blob) throw new Error('The presentation image could not be encoded.')
-      download(blob, filename)
-    } finally {
-      URL.revokeObjectURL(source)
-    }
+    const canvas = document.createElement('canvas')
+    canvas.width = EXPORT_WIDTH * 2
+    canvas.height = EXPORT_HEIGHT * 2
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('PNG export is not supported by this browser.')
+    context.fillStyle = '#f6f8fa'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 1))
+    if (!blob) throw new Error('The presentation image could not be encoded.')
+    download(blob, filename)
   } catch (error) {
     markExport({
       filename,

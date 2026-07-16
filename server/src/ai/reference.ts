@@ -36,11 +36,11 @@ export async function getAiReferenceData() {
 export function referenceHash(reference: AiReferenceData) {
   const stable = {
     organizationId: reference.organization?.id || null,
-    crewDirectors: reference.crewDirectors.map((item) => ({ id: item.id, name: item.person.name, updatedAt: item.updatedAt.toISOString() })),
-    operationsManagers: reference.operationsManagers.map((item) => ({ id: item.id, parentId: item.crewDirectorId, name: item.person.name, updatedAt: item.updatedAt.toISOString() })),
-    deputyManagers: reference.deputyManagers.map((item) => ({ id: item.id, parentId: item.operationsManagerId, name: item.person.name, updatedAt: item.updatedAt.toISOString(), crewManagers: item.crewManagers.length })),
-    crewManagers: reference.crewManagers.map((item) => ({ id: item.id, parentId: item.deputyManagerId, name: item.person.name, updatedAt: item.updatedAt.toISOString(), vessels: item.vesselAllocations.length })),
-    assistants: reference.assistants.map((item) => ({ id: item.id, parentId: item.crewManagerId, name: item.person.name, updatedAt: item.updatedAt.toISOString() })),
+    crewDirectors: reference.crewDirectors.map((item) => ({ id: item.id, name: item.person.name, designation: item.person.designation, personUpdatedAt: item.person.updatedAt.toISOString(), updatedAt: item.updatedAt.toISOString() })),
+    operationsManagers: reference.operationsManagers.map((item) => ({ id: item.id, parentId: item.crewDirectorId, name: item.person.name, designation: item.person.designation, personUpdatedAt: item.person.updatedAt.toISOString(), updatedAt: item.updatedAt.toISOString() })),
+    deputyManagers: reference.deputyManagers.map((item) => ({ id: item.id, parentId: item.operationsManagerId, name: item.person.name, designation: item.person.designation, personUpdatedAt: item.person.updatedAt.toISOString(), updatedAt: item.updatedAt.toISOString(), crewManagers: item.crewManagers.length })),
+    crewManagers: reference.crewManagers.map((item) => ({ id: item.id, parentId: item.deputyManagerId, name: item.person.name, designation: item.person.designation, personUpdatedAt: item.person.updatedAt.toISOString(), updatedAt: item.updatedAt.toISOString(), vessels: item.vesselAllocations.length })),
+    assistants: reference.assistants.map((item) => ({ id: item.id, parentId: item.crewManagerId, name: item.person.name, designation: item.person.designation, personUpdatedAt: item.person.updatedAt.toISOString(), updatedAt: item.updatedAt.toISOString() })),
     vessels: reference.vessels.map((item) => ({ id: item.id, name: item.name, vesselType: item.vesselType, updatedAt: item.updatedAt.toISOString(), allocations: item.vesselAllocations.map((allocation) => ({ crewManagerId: allocation.crewManagerId, assistantId: allocation.assignedAssistantId })) })),
   }
   return createHash('sha256').update(JSON.stringify(stable)).digest('hex')

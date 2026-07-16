@@ -36,6 +36,7 @@ await app.register(helmet, {
   contentSecurityPolicy: {
     directives: {
       'upgrade-insecure-requests': env.ENABLE_HTTPS_CSP ? [] : null,
+      'img-src': ["'self'", 'data:', 'blob:'],
     },
   },
 })

@@ -1,15 +1,17 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OrgChartView } from '../src/components/OrgChartView'
 import type { ChartData, CrewManagerNode, DeputyManagerNode } from '../src/types'
 
-const { chartDataMock } = vi.hoisted(() => ({
+const { chartDataMock, saveHierarchyPersonMock } = vi.hoisted(() => ({
   chartDataMock: { current: null as ChartData | null },
+  saveHierarchyPersonMock: vi.fn(),
 }))
 
 vi.mock('../src/state/ChartContext', () => ({
   useChart: () => ({
     data: chartDataMock.current,
+    saveHierarchyPerson: saveHierarchyPersonMock,
   }),
 }))
 
@@ -94,6 +96,7 @@ function makeChartData(managerCount: number): ChartData {
 describe('OrgChartView deterministic layout', () => {
   afterEach(() => {
     cleanup()
+    saveHierarchyPersonMock.mockReset()
   })
 
   it('uses isolated org-chart grid classes for three crew managers', () => {
@@ -124,5 +127,26 @@ describe('OrgChartView deterministic layout', () => {
     render(<OrgChartView />)
 
     expect(screen.getByText('No Crew Managers assigned yet')).toBeInTheDocument()
+  })
+
+  it('lets editors save a trimmed identity update directly from the chart', async () => {
+    chartDataMock.current = makeChartData(1)
+    saveHierarchyPersonMock.mockResolvedValue(undefined)
+    render(<OrgChartView canEdit />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit QA Director' }))
+    fireEvent.change(screen.getByLabelText(/Name/), { target: { value: '  Amit Kumar  ' } })
+    fireEvent.change(screen.getByLabelText(/Designation/), { target: { value: '  Crew Director, Asia  ' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save to database/i }))
+
+    await waitFor(() => expect(saveHierarchyPersonMock).toHaveBeenCalledTimes(1))
+    expect(saveHierarchyPersonMock.mock.calls[0][0]).toEqual({ kind: 'crewDirector', id: 'director-qa' })
+    expect(saveHierarchyPersonMock.mock.calls[0][1]).toMatchObject({ name: 'Amit Kumar', designation: 'Crew Director, Asia' })
+  })
+
+  it('does not expose inline edit actions in read-only mode', () => {
+    chartDataMock.current = makeChartData(1)
+    render(<OrgChartView />)
+    expect(screen.queryByRole('button', { name: /Edit QA Director/ })).not.toBeInTheDocument()
   })
 })

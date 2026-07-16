@@ -42,6 +42,7 @@ Use the variables in `server/.env.example`:
 
 - `DATABASE_URL`
 - `SESSION_SECRET`
+- `SESSION_TTL_HOURS` (defaults to `12`, maximum `24`)
 - `NODE_ENV`
 - `FRONTEND_URL`
 - `ADMIN_SEED_EMAIL`
@@ -52,15 +53,14 @@ Keep real values out of GitHub and out of the frontend.
 
 ### Edit chart details
 
-Use the **Chart editor** panel on the left. Open **Chart settings** to change the title, organization name, effective date, and footer. Open **Crew hierarchy** to edit Crew Directors, Crew Operations Managers, Crew Managers, and Assistants.
+Use the **Chart editor** panel on the left for full hierarchy changes. Admin and Editor users can also select the pencil action directly on any Organization Chart person card to correct that person's name or designation and save it immediately to PostgreSQL.
 
-### Add teams, assistants, and vessels
+### Add hierarchy levels and vessels
 
-1. Open **Crew hierarchy** to add Crew Operations Managers, Crew Managers, and Assistants.
+1. Open **Crew hierarchy** to add Crew Operations Managers, Deputy Managers, and Crew Managers.
 2. Select **Vessel Master** in the top navigation.
 3. Add or edit vessels in the table and select the responsible Crew Manager.
-4. Optionally select an Assistant from that Crew Manager's support team.
-5. Use search and filters to focus on an operations group, status, or management type.
+4. Use search and filters to focus on an operations group, status, or management type.
 
 ### Export for PowerPoint
 
@@ -126,7 +126,7 @@ Business data is stored in PostgreSQL through the backend API. Browser localStor
 
 ## AI Assistant
 
-The AI Assistant lets Admin and Editor users generate a controlled preview for approved Vessel Master and Organization Chart updates. AI only interprets the instruction; the backend validates names against current PostgreSQL data and applies it only after the user clicks **Confirm Update**.
+The AI Assistant lets Admin and Editor users generate a controlled preview for approved Vessel Master and Organization Chart updates. AI only interprets the instruction; the backend validates names against current PostgreSQL data and applies it only after the user clicks **Confirm Update**. A prompt can contain one update or a list of up to 50 updates (one per line). A list is rejected as a whole if any item is ambiguous, invalid, duplicated, or unsafe; confirmation applies every validated item in one PostgreSQL transaction.
 
 The assistant is now LLM-first in production modes. Use `openai`, `claude`, or `gemini` for natural-language understanding. Use `mock` only for local deterministic testing. If the selected provider is missing its key, the app shows a safe not-configured message and never exposes provider keys to the frontend.
 
@@ -137,7 +137,7 @@ AI_PROVIDER=openai
 
 # OpenAI optional
 OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.5
+OPENAI_MODEL=gpt-5-mini
 
 # Claude optional
 ANTHROPIC_API_KEY=
@@ -164,11 +164,21 @@ Example instructions the assistant should understand:
 
 - “Create one new bulk carrier called Oceanic and give it to Pavan.”
 - “Add Oceanic vessel under Pavan Kesari, it is a bulk carrier.”
-- “Put Pavan below Sidharth in the crew manager section.”
-- “Move Neha from Pavan team to Sidharth team.”
+- “Add Deputy Manager Pavan under Sidharth.”
+- “Update Deputy Manager Pavan Kesari designation to Deputy Crew Manager.”
+- “Add Crew Manager Jinal under Deputy Manager Pavan.”
 - “Sidharth will handle Oceanic from now.”
 
-Supported actions include creating, renaming, moving, and safely removing Crew Directors, Crew Operations Managers, Crew Managers, Assistants, plus creating vessels and updating vessel name, type, or Crew Manager assignment. Blocked actions include user/role/password changes, SQL/database commands, security settings, environment variables, bulk deletes, and Maritime Infinity changes.
+For a list, keep all lines in one area (Vessel Master or Organization Chart), for example:
+
+```text
+Add new vessel North Star bulk carrier to Pavan Kesari
+Add new vessel South Star tanker to Jinal Kotak
+```
+
+The preview shows all proposed fields before confirmation. If database data changes while the preview is open, confirmation is refused and a fresh preview is required.
+
+Supported actions include creating and updating Crew Directors, Crew Operations Managers, Deputy Managers, and Crew Managers; correcting names and designations; moving supported hierarchy records; creating vessels; and updating vessel name, type, or Crew Manager assignment. Assistants are not part of the active hierarchy. Destructive AI removal, user/role/password changes, SQL/database commands, security settings, environment variables, bulk deletes, and Maritime Infinity changes remain blocked.
 
 Voice input uses the browser Web Speech API. It fills the prompt textarea only; it never sends data or applies updates until the user clicks **Generate Preview** and then **Confirm Update**.
 
@@ -269,6 +279,7 @@ Backend `server/.env`
 ```bash
 DATABASE_URL=postgresql://...
 SESSION_SECRET=replace-with-a-long-secret
+SESSION_TTL_HOURS=12
 PORT=8081
 NODE_ENV=development
 COOKIE_SECURE=false
@@ -339,6 +350,7 @@ Backend:
 
 - `DATABASE_URL`
 - `SESSION_SECRET`
+- `SESSION_TTL_HOURS=12`
 - `PORT`
 - `NODE_ENV=production`
 - `COOKIE_SECURE`
@@ -406,7 +418,10 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 - The backend serves both the Vite frontend and `/api/*` routes.
 - `GET /api/health` remains available for App Platform health checks.
 - Unknown non-API routes return `index.html`, so setup/reset links work directly.
-- Cookies are `httpOnly`, use `sameSite=lax`, and `secure` is controlled by `COOKIE_SECURE`.
+- Cookies are `httpOnly`, use `sameSite=lax`, and are always `secure` when `NODE_ENV=production`.
+- JWT and cookie lifetime are bounded by `SESSION_TTL_HOURS` (12 hours by default, never more than 24 hours), so a previous day's browser session cannot remain valid indefinitely.
+- Session-version validation invalidates legacy long-lived cookies on this release; users sign in again once after deployment.
+- The Content Security Policy permits only same-origin, `data:`, and `blob:` image sources required by the local SVG-to-PNG export pipeline.
 - Helmet only enables `upgrade-insecure-requests` when `ENABLE_HTTPS_CSP=true`.
 - CORS allows only the configured `FRONTEND_URL` and keeps `credentials: true`.
 

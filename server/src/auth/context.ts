@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Role, User } from '@prisma/client'
 import { prisma } from '../db/prisma.js'
 import { toSafeUser } from '../utils/safeUser.js'
+import { authSessionVersion } from '../utils/session.js'
 
 export const authCookieName = 'crew_chart_session'
 export const roleChangedReloginCode = 'ROLE_CHANGED_RELOGIN_REQUIRED'
@@ -9,6 +10,7 @@ export const roleChangedReloginCode = 'ROLE_CHANGED_RELOGIN_REQUIRED'
 type SessionPayload = {
   sub: string
   pv: number
+  sv: number
 }
 
 type SessionResolveResult =
@@ -25,6 +27,7 @@ async function verifySession(request: FastifyRequest): Promise<SessionResolveRes
 
   try {
     const payload = await req.jwtVerify<SessionPayload>()
+    if (payload.sv !== authSessionVersion) return { user: null, reason: 'NOT_AUTHENTICATED' }
     const user = await prisma.user.findUnique({ where: { id: payload.sub } })
     if (!user) return { user: null, reason: 'NOT_AUTHENTICATED' }
     if (user.permissionVersion !== payload.pv) return { user: null, reason: roleChangedReloginCode }

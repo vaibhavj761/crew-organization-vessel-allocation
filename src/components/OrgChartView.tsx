@@ -1,10 +1,15 @@
-import { useChart } from '../state/ChartContext'
+import { Pencil } from 'lucide-react'
+import { useState } from 'react'
+import { useChart, type HierarchyPersonTarget } from '../state/ChartContext'
+import type { Person } from '../types'
 import { ChartHeader } from './ChartHeader'
 import { PersonCard } from './PersonCard'
 import { TeamCard } from './TeamCard'
+import { InlinePersonEditor } from './InlinePersonEditor'
 
-export function OrgChartView({ selectedDirectorId = '' }: { selectedDirectorId?: string }) {
-  const { data } = useChart()
+export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { selectedDirectorId?: string; canEdit?: boolean }) {
+  const { data, saveHierarchyPerson } = useChart()
+  const [editing, setEditing] = useState<{ target: HierarchyPersonTarget; person: Person; levelLabel: string } | null>(null)
   const visibleDirectors = selectedDirectorId ? data.crewDirectors.filter((director) => director.id === selectedDirectorId) : data.crewDirectors
 
   return (
@@ -20,7 +25,7 @@ export function OrgChartView({ selectedDirectorId = '' }: { selectedDirectorId?:
             return (
               <section className="org-director-section" key={director.id}>
                 <div className="director-row">
-                  <PersonCard person={director.person} level="head" compact />
+                  <PersonCard person={director.person} level="head" compact onEdit={canEdit ? () => setEditing({ target: { kind: 'crewDirector', id: director.id }, person: director.person, levelLabel: 'Crew Director' }) : undefined} />
                 </div>
 
                 {directorOps.length ? (
@@ -33,6 +38,7 @@ export function OrgChartView({ selectedDirectorId = '' }: { selectedDirectorId?:
                             <span>{op.person.designation}</span>
                           </div>
                           <b>{op.person.notes || `${op.deputyManagers.length} deputies`}</b>
+                          {canEdit ? <button type="button" className="chart-inline-edit" onClick={() => setEditing({ target: { kind: 'operationsManager', id: op.id }, person: op.person, levelLabel: 'Crew Operations Manager' })} aria-label={`Edit ${op.person.name}`}><Pencil size={12} /></button> : null}
                         </div>
 
                         <div className="org-deputy-grid">
@@ -42,6 +48,7 @@ export function OrgChartView({ selectedDirectorId = '' }: { selectedDirectorId?:
                                 <strong>{deputy.person.name}</strong>
                                 <span>{deputy.person.designation || 'Deputy Crew Manager'}</span>
                                 <b>{deputy.person.notes || `${deputy.crewManagers.length} crew managers`}</b>
+                                {canEdit ? <button type="button" className="chart-inline-edit" onClick={() => setEditing({ target: { kind: 'deputyManager', id: deputy.id, operationsManagerId: op.id }, person: deputy.person, levelLabel: 'Deputy Manager' })} aria-label={`Edit ${deputy.person.name}`}><Pencil size={12} /></button> : null}
                               </div>
                               <div className="org-crew-manager-grid layout-many">
                                 {deputy.crewManagers.length ? deputy.crewManagers.map((cm) => (
@@ -51,6 +58,7 @@ export function OrgChartView({ selectedDirectorId = '' }: { selectedDirectorId?:
                                     vessels={data.vessels.filter((v) => v.crewManagerId === cm.id || v.crewManagerId === cm.person.id)}
                                     compact
                                     showVessels={false}
+                                    onEdit={canEdit ? () => setEditing({ target: { kind: 'crewManager', id: cm.id, deputyManagerId: deputy.id }, person: cm.person, levelLabel: 'Crew Manager' }) : undefined}
                                   />
                                 )) : (
                                   <div className="chart-empty-state">
@@ -91,6 +99,7 @@ export function OrgChartView({ selectedDirectorId = '' }: { selectedDirectorId?:
         <span>{data.footerText}</span>
         <span>{visibleDirectors.length} crew directors · {data.operationsManagers.length} crew operations managers</span>
       </footer>
+      {editing ? <InlinePersonEditor person={editing.person} levelLabel={editing.levelLabel} onClose={() => setEditing(null)} onSave={(person) => saveHierarchyPerson(editing.target, person)} /> : null}
     </div>
   )
 }

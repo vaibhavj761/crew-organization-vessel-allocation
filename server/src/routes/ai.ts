@@ -6,12 +6,12 @@ import { requestIp } from '../services/audit.js'
 import { env } from '../config/env.js'
 import { aiProviderStatus, categorizeProviderError, interpretAiPrompt, isAiProviderConfigured, notConfiguredMessage, recordAiProviderError } from '../ai/provider.js'
 import { getAiReferenceData, referenceHash } from '../ai/reference.js'
-import { buildAiPreview, applyAiPreview } from '../ai/actions.js'
+import { buildAiBatchPreview, applyAiPreview } from '../ai/actions.js'
 import { deleteAiPreview, getAiPreview, storeAiPreview } from '../ai/previewStore.js'
 import { scopeMismatchMessage } from '../ai/localParser.js'
 
 const previewRequestSchema = z.object({
-  prompt: z.string().transform((value) => value.trim()).pipe(z.string().min(1, 'Instruction is required.')),
+  prompt: z.string().transform((value) => value.trim()).pipe(z.string().min(1, 'Instruction is required.').max(20_000, 'Instruction is too long. Split it into smaller batches.')),
   scope: z.enum(['auto', 'vessel_master', 'organization_chart']).optional(),
 })
 
@@ -60,7 +60,7 @@ export async function aiRoutes(app: FastifyInstance) {
     return reply.send(aiProviderStatus())
   })
 
-  app.post('/api/ai/preview', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request, reply) => {
+  app.post('/api/ai/preview', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     const user = await requireAiWriteUser(request, reply)
     if (!user) return
     const parsed = previewRequestSchema.safeParse(request.body)
@@ -107,8 +107,9 @@ export async function aiRoutes(app: FastifyInstance) {
           errorCategory: 'missing_key',
         })
       }
-      const interpretedDomain = interpreted.action.domain === 'unsupported' ? null : interpreted.action.domain
-      const mismatch = scopeMismatchMessage(parsed.data.scope, interpretedDomain)
+      const interpretedDomains = [...new Set(interpreted.actions.filter((item) => item.domain !== 'unsupported').map((item) => item.domain))]
+      const interpretedDomain = interpretedDomains.length === 1 ? interpretedDomains[0] : null
+      const mismatch = interpretedDomains.map((domain) => scopeMismatchMessage(parsed.data.scope, domain)).find(Boolean) || null
       if (env.NODE_ENV === 'development') {
         request.log.info({
           aiProvider: env.AI_PROVIDER,
@@ -138,7 +139,7 @@ export async function aiRoutes(app: FastifyInstance) {
         })
       }
       const preview = {
-        ...buildAiPreview(interpreted.action, reference),
+        ...buildAiBatchPreview(interpreted.actions, reference),
         ...previewMeta(interpreted.providerUsed, interpreted.fallbackUsed, interpreted.fallbackReason),
         errorCategory: null,
       }
@@ -150,7 +151,8 @@ export async function aiRoutes(app: FastifyInstance) {
         ...preview,
         userId: user.id,
         prompt: parsed.data.prompt,
-        structuredAction: interpreted.action,
+        structuredAction: interpreted.actions[0],
+        preparedActions: preview.preparedActions,
         referenceHash: referenceHash(reference),
       })
       return reply.send(publicPreview(stored))
@@ -198,14 +200,15 @@ export async function aiRoutes(app: FastifyInstance) {
       return reply.code(409).send({ message: 'Data changed after this preview was generated. Please generate a new preview.' })
     }
 
-    const rebuilt = buildAiPreview(preview.structuredAction, reference)
+    const actions = preview.preparedActions?.map((item) => item.structuredAction) || [preview.structuredAction]
+    const rebuilt = buildAiBatchPreview(actions, reference)
     if (rebuilt.status !== 'ready') {
       deleteAiPreview(preview.previewId)
       return reply.code(409).send({ message: rebuilt.summary || 'This AI preview is no longer valid. Please generate a new preview.' })
     }
 
     try {
-      const updatedEntity = await applyAiPreview(preview, reference.organization.id, user.id, requestIp(request))
+      const updatedEntity = await applyAiPreview({ ...preview, preparedActions: rebuilt.preparedActions }, reference.organization.id, user.id, requestIp(request))
       deleteAiPreview(preview.previewId)
       return reply.send({
         status: 'success',

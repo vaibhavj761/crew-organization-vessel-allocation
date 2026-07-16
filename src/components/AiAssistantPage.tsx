@@ -15,8 +15,8 @@ const examples = [
   'Add vessel Test as bulk carrier and assign it to Jinal.',
   'New bulk carrier Oceanic, give it to Pavan.',
   'Sidharth will handle Oceanic from now.',
-  'Add assistant Neha under Pavan.',
-  'Move Neha from Pavan team to Sidharth team.',
+  'Add Crew Operations Manager Ramesh under Amit.',
+  'Rename Crew Manager Pavan Kesari to Pawan Kesari.',
 ]
 
 function userMessage(error: unknown) {
@@ -116,10 +116,10 @@ export function AiAssistantPage({ user, initialScope = 'auto' }: { user: SafeUse
 
       <div className="ai-workspace-grid">
         <main className="ai-main-column">
-          <SectionCard title="Create an update preview" description="Supports Vessel Master and Organization Chart changes only.">
+          <SectionCard title="Create an update preview" description="Submit one update or paste a list of up to 50 Vessel Master or Organization Chart changes.">
             <div className="ai-composer">
               <label className="field"><span>Update area</span><select value={scope} onChange={(event) => setScope(event.target.value as AiScope)} disabled={busy}><option value="auto">Auto-detect from instruction</option><option value="vessel_master">Vessel Master</option><option value="organization_chart">Organization Chart</option></select></label>
-              <label className="field ai-prompt"><span>Instruction</span><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Example: Add vessel Test as bulk carrier and assign it to Jinal." disabled={busy} /><small>Use names as they appear in the app. Ambiguous matches will ask for clarification.</small></label>
+              <label className="field ai-prompt"><span>Instruction</span><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Example: Add vessel Test as bulk carrier and assign it to Jinal." disabled={busy} /><small>Use one update per line for lists. Every item is validated and nothing is saved unless the complete preview is safe.</small></label>
               <div className="ai-actions">
                 <button className="button secondary" type="button" onClick={startVoiceInput} disabled={busy || listening}><Mic size={15} />{listening ? 'Listening…' : 'Speak'}</button>
                 <button className="button" type="button" onClick={() => void generatePreview()} disabled={busy || !prompt.trim()}><Sparkles size={15} />{busy ? 'Generating preview…' : 'Generate preview'}</button>
