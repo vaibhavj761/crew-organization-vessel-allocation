@@ -427,7 +427,7 @@ async function applySingleAiAction(tx: Prisma.TransactionClient, action: AiStruc
         const vesselName = text(data.vesselName || target.vesselName)
         const duplicate = await tx.vessel.findFirst({ where: { organizationId, name: { equals: vesselName, mode: 'insensitive' } }, select: { id: true } })
         if (duplicate) throw new Error(`Vessel "${vesselName}" already exists.`)
-        const vessel = await tx.vessel.create({ data: { organizationId, name: vesselName, vesselType: text(data.vesselType), vesselStatus: 'UPCOMING', managementType: 'FULL_MANAGED', sortOrder: 0 } })
+        const vessel = await tx.vessel.create({ data: { organizationId, name: vesselName, vesselType: text(data.vesselType), vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', sortOrder: 0 } })
         await tx.vesselAllocation.create({ data: { vesselId: vessel.id, crewManagerId: crewManager.id } })
         updatedEntity = { type: 'Vessel', id: vessel.id, name: vessel.name }
         break

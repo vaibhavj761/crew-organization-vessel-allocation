@@ -116,7 +116,7 @@ export function mapVesselResponseToVessel(raw: RawVessel, sortOrder: number): Ve
     vesselManager: text(raw?.vesselManager),
     crewManagerId: currentAllocation?.crewManagerId || '',
     assignedAssistantId: '',
-    vesselStatus: raw?.vesselStatus || 'UPCOMING',
+    vesselStatus: raw?.vesselStatus || 'IN_MANAGEMENT',
     managementType: raw?.managementType || 'FULL_MANAGED',
     notes: text(raw?.notes),
     sortOrder,

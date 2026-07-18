@@ -1,5 +1,5 @@
 import { createContext, type Dispatch, type ReactNode, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import type { ChartData, Person } from '../types'
+import type { ChartData, Person, Vessel } from '../types'
 import { chartReducer, type ChartAction } from './chartReducer'
 import { hierarchyApi } from '../api/hierarchy'
 import { organizationApi } from '../api/organization'
@@ -57,6 +57,9 @@ interface ChartContextValue {
   syncNotice: string
   saveChanges: () => Promise<void>
   saveHierarchyPerson: (target: HierarchyPersonTarget, person: Person) => Promise<void>
+  assignVesselFromChart: (vesselId: string, crewManagerId: string) => Promise<void>
+  unassignVesselFromChart: (vesselId: string) => Promise<void>
+  saveVesselFromChart: (vessel: Vessel) => Promise<void>
   refreshWorkspaceData: (reason: WorkspaceRefreshReason) => Promise<void>
 }
 
@@ -375,7 +378,12 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       setSyncNotice('')
       return
     }
-    const vesselValidationMessage = getBlockingVesselValidationMessage(data.vessels)
+    const snapshotVessels = new Map((snapshotRef.current?.vessels || []).map((vessel) => [vessel.id, vessel]))
+    const changedVessels = data.vessels.filter((vessel) => {
+      const previous = snapshotVessels.get(vessel.id)
+      return !previous || !equalJson(mapVesselToApiPayload(vessel), mapVesselToApiPayload(previous))
+    })
+    const vesselValidationMessage = getBlockingVesselValidationMessage(changedVessels)
     if (vesselValidationMessage) {
       setSaveState('error')
       setErrorMessage(vesselValidationMessage)
@@ -440,9 +448,53 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     }
   }, [data, loadState])
 
+  const runConfirmedVesselWrite = useCallback(async (notice: string, operation: () => Promise<unknown>) => {
+    if (loadState !== 'ready' || syncingRef.current) throw new Error('Please wait for the current workspace operation to finish.')
+    if (snapshotRef.current && !equalJson(snapshotRef.current, data)) {
+      throw new Error('Save or refresh your other pending changes before updating a vessel directly on the chart.')
+    }
+    syncingRef.current = true
+    setSaveState('saving')
+    setErrorMessage('')
+    setSyncNotice(notice)
+    try {
+      await operation()
+      apiClient.clearGetRequestCache()
+      await refreshWorkspaceData('save-success')
+      setSaveState('saved')
+      setSyncNotice('Saved to database')
+    } catch (error) {
+      const message = normalizeApiError(error, 'Failed to update vessel allocation')
+      setSaveState('error')
+      setErrorMessage(message)
+      setSyncNotice('')
+      throw new Error(message)
+    } finally {
+      syncingRef.current = false
+    }
+  }, [data, loadState, refreshWorkspaceData])
+
+  const assignVesselFromChart = useCallback(async (vesselId: string, crewManagerId: string) => {
+    if (!vesselId) throw new Error('Select a vessel to assign.')
+    if (!crewManagerId) throw new Error('Select a Crew Manager.')
+    await runConfirmedVesselWrite('Assigning vessel…', () => vesselsApi.updateVesselAllocation(vesselId, { crewManagerId }))
+  }, [runConfirmedVesselWrite])
+
+  const unassignVesselFromChart = useCallback(async (vesselId: string) => {
+    if (!vesselId) throw new Error('Select a vessel to remove from this allocation.')
+    await runConfirmedVesselWrite('Removing vessel allocation…', () => vesselsApi.deleteVesselAllocation(vesselId))
+  }, [runConfirmedVesselWrite])
+
+  const saveVesselFromChart = useCallback(async (vessel: Vessel) => {
+    const normalized = normalizeVesselTextFields(vessel)
+    const validationMessage = getBlockingVesselValidationMessage([normalized])
+    if (validationMessage) throw new Error(validationMessage)
+    await runConfirmedVesselWrite('Updating vessel details…', () => vesselsApi.updateVessel(normalized.id, mapVesselToApiPayload(normalized)))
+  }, [runConfirmedVesselWrite])
+
   const value = useMemo(
-    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, refreshWorkspaceData }),
-    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, refreshWorkspaceData],
+    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart, refreshWorkspaceData }),
+    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart, refreshWorkspaceData],
   )
 
   return <ChartContext.Provider value={value}>{children}</ChartContext.Provider>

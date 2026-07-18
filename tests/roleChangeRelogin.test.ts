@@ -13,7 +13,7 @@ describe('role-change relogin enforcement', () => {
     const authRouteSource = read('server/src/routes/auth.ts')
     const authContextSource = read('server/src/auth/context.ts')
 
-    expect(authRouteSource).toContain('pv: updated.permissionVersion')
+    expect(authRouteSource).toContain('pv: user.permissionVersion')
     expect(authContextSource).toContain('if (user.permissionVersion !== payload.pv)')
     expect(authContextSource).toContain("code: roleChangedReloginCode")
   })

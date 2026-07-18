@@ -1,23 +1,28 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import type { CrewManagerNode, Vessel } from '../types'
 import { useChart } from '../state/ChartContext'
 import { getCrewManagerLayoutMode } from '../utils/chartLayout'
 import { getDeputyManagersForOperationsManager } from '../utils/operationsAllocation'
 import { ChartHeader } from './ChartHeader'
 import { PersonCard } from './PersonCard'
 import { TeamCard } from './TeamCard'
+import { VesselAllocationDialog } from './VesselAllocationDialog'
 
 export function OperationsAllocationView({
   crewDirectorId,
   operationsManagerId,
   deputyManagerId,
   crewManagerId,
+  canEdit = false,
 }: {
   crewDirectorId: string
   operationsManagerId: string
   deputyManagerId: string
   crewManagerId: string
+  canEdit?: boolean
 }) {
-  const { data } = useChart()
+  const { data, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart } = useChart()
+  const [dialog, setDialog] = useState<{ mode: 'assign' | 'edit' | 'unassign'; team: CrewManagerNode; vessel?: Vessel } | null>(null)
 
   const director = useMemo(
     () => data.crewDirectors.find((item) => item.id === crewDirectorId),
@@ -135,6 +140,9 @@ export function OperationsAllocationView({
                     team={team}
                     vessels={data.vessels.filter((item) => item.crewManagerId === team.id || item.crewManagerId === team.person.id)}
                     vesselNamesOnly
+                    onAssignVessel={canEdit ? () => setDialog({ mode: 'assign', team }) : undefined}
+                    onEditVessel={canEdit ? (vessel) => setDialog({ mode: 'edit', team, vessel }) : undefined}
+                    onUnassignVessel={canEdit ? (vessel) => setDialog({ mode: 'unassign', team, vessel }) : undefined}
                   />
                 )) : (
                   <div className="chart-empty-state">
@@ -157,6 +165,16 @@ export function OperationsAllocationView({
         <span>{data.footerText}</span>
         <span>{visibleVesselCount} vessel names shown</span>
       </footer>
+      {dialog ? <VesselAllocationDialog
+        mode={dialog.mode}
+        team={dialog.team}
+        vessel={dialog.vessel}
+        vessels={data.vessels}
+        onClose={() => setDialog(null)}
+        onAssign={(vesselId) => assignVesselFromChart(vesselId, dialog.team.id)}
+        onSave={saveVesselFromChart}
+        onUnassign={unassignVesselFromChart}
+      /> : null}
     </div>
   )
 }

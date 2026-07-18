@@ -80,7 +80,7 @@ describe('api mappers', () => {
     const vessel = mapVesselResponseToVessel({ id: 'vessel-2', name: 'MV Ocean Crest' }, 2)
     expect(vessel.vesselType).toBe('')
     expect(vessel.ownerName).toBe('')
-    expect(vessel.vesselStatus).toBe('UPCOMING')
+    expect(vessel.vesselStatus).toBe('IN_MANAGEMENT')
   })
 
   it('maps chart vessel data back to a stable api payload', () => {

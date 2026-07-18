@@ -1,15 +1,21 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OperationsAllocationView } from '../src/components/OperationsAllocationView'
 import type { ChartData, CrewManagerNode, DeputyManagerNode } from '../src/types'
 
-const { chartDataMock } = vi.hoisted(() => ({
+const { chartDataMock, assignVesselMock, unassignVesselMock, saveVesselMock } = vi.hoisted(() => ({
   chartDataMock: { current: null as ChartData | null },
+  assignVesselMock: vi.fn().mockResolvedValue(undefined),
+  unassignVesselMock: vi.fn().mockResolvedValue(undefined),
+  saveVesselMock: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('../src/state/ChartContext', () => ({
   useChart: () => ({
     data: chartDataMock.current,
+    assignVesselFromChart: assignVesselMock,
+    unassignVesselFromChart: unassignVesselMock,
+    saveVesselFromChart: saveVesselMock,
   }),
 }))
 
@@ -141,5 +147,19 @@ describe('OperationsAllocationView blank-canvas protection', () => {
     render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="missing-ops" deputyManagerId="" crewManagerId="" />)
 
     expect(screen.getByText('No matching team found for the selected filters.')).toBeInTheDocument()
+  })
+
+  it('shows chart allocation controls only to an editor', () => {
+    const data = makeChartData()
+    data.vessels = [{ id: 'vessel-1', name: 'Ocean Test', vesselType: 'Bulk carrier', vesselDoc: '', deadweightTonnage: '', ownerPool: '', ownerName: '', vesselManager: '', crewManagerId: 'cm-one', assignedAssistantId: '', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', notes: '', sortOrder: 1 }]
+    chartDataMock.current = data
+    const { rerender } = render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" deputyManagerId="" crewManagerId="" />)
+    expect(screen.queryByText('Assign vessel')).not.toBeInTheDocument()
+
+    rerender(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" deputyManagerId="" crewManagerId="" canEdit />)
+    expect(screen.getAllByText('Assign vessel').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Ocean Test' }))
+    expect(screen.getByRole('dialog', { name: 'Review vessel details' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm vessel update' })).toBeInTheDocument()
   })
 })

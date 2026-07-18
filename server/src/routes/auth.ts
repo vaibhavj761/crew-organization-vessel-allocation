@@ -6,7 +6,7 @@ import { authSessionVersion, clearAuthCookie, setAuthCookie } from '../utils/ses
 import { toSafeUser } from '../utils/safeUser.js'
 import { consumePasswordToken, createPasswordToken } from '../services/passwordTokens.js'
 import { requestIp, writeAuditLog } from '../services/audit.js'
-import { getCurrentUserWithReason, roleChangedReloginCode } from '../auth/context.js'
+import { getCurrentUserWithReason, requireCurrentUser, roleChangedReloginCode } from '../auth/context.js'
 import { env } from '../config/env.js'
 
 const loginSchema = z.object({
@@ -22,6 +22,25 @@ const passwordSchema = z.object({
 const forgotSchema = z.object({
   email: z.string().email(),
 })
+
+const profileSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required.'),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address.'),
+  currentPassword: z.string().min(1, 'Current password is required.'),
+})
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required.'),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters.'),
+}).refine((value) => value.currentPassword !== value.newPassword, { path: ['newPassword'], message: 'Choose a new password that is different from your current password.' })
+
+async function issueSession(reply: Parameters<typeof setAuthCookie>[0], user: { id: string; permissionVersion: number }) {
+  const token = await reply.jwtSign(
+    { sub: user.id, pv: user.permissionVersion, sv: authSessionVersion },
+    { sign: { expiresIn: env.SESSION_TTL_HOURS * 60 * 60 } },
+  )
+  setAuthCookie(reply, token)
+}
 
 function loginStatusMessage(status: string) {
   if (status === 'PENDING_APPROVAL') return 'Your access request is still pending approval.'
@@ -45,11 +64,7 @@ export async function authRoutes(app: FastifyInstance) {
     if (!ok) return reply.code(401).send({ message: 'Invalid email or password' })
 
     const updated = await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-    const token = await reply.jwtSign(
-      { sub: updated.id, pv: updated.permissionVersion, sv: authSessionVersion },
-      { sign: { expiresIn: env.SESSION_TTL_HOURS * 60 * 60 } },
-    )
-    setAuthCookie(reply, token)
+    await issueSession(reply, updated)
     return reply.send({ user: toSafeUser(updated) })
   })
 
@@ -69,6 +84,58 @@ export async function authRoutes(app: FastifyInstance) {
     const user = await prisma.user.findUnique({ where: { id: result.user.id } })
     if (!user) return reply.code(401).send({ message: 'Not authenticated' })
     return reply.send({ user: toSafeUser(user) })
+  })
+
+  app.patch('/api/auth/profile', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const currentUser = await requireCurrentUser(request, reply)
+    if (!currentUser) return
+    const parsed = profileSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message || 'Invalid profile payload' })
+    const user = await prisma.user.findUnique({ where: { id: currentUser.id } })
+    if (!user?.passwordHash || !(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
+      return reply.code(400).send({ message: 'Current password is incorrect.' })
+    }
+    const duplicate = await prisma.user.findFirst({ where: { email: parsed.data.email, id: { not: user.id } }, select: { id: true } })
+    if (duplicate) return reply.code(409).send({ message: 'That email address is already in use.' })
+    const emailChanged = parsed.data.email !== user.email
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        permissionVersion: emailChanged ? { increment: 1 } : undefined,
+      },
+    })
+    if (emailChanged) await issueSession(reply, updated)
+    await writeAuditLog({
+      userId: user.id,
+      action: 'user.profile.updated',
+      entityType: 'User',
+      entityId: user.id,
+      beforeJson: { name: user.name, email: user.email },
+      afterJson: { name: updated.name, email: updated.email },
+      ipAddress: requestIp(request),
+    })
+    return reply.send({ user: toSafeUser(updated) })
+  })
+
+  app.post('/api/auth/change-password', { config: { rateLimit: { max: 8, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const currentUser = await requireCurrentUser(request, reply)
+    if (!currentUser) return
+    const parsed = changePasswordSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message || 'Invalid password payload' })
+    const user = await prisma.user.findUnique({ where: { id: currentUser.id } })
+    if (!user?.passwordHash || !(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
+      return reply.code(400).send({ message: 'Current password is incorrect.' })
+    }
+    const passwordHash = await hashPassword(parsed.data.newPassword)
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, permissionVersion: { increment: 1 } },
+    })
+    await issueSession(reply, updated)
+    await writeAuditLog({ userId: user.id, action: 'password.changed', entityType: 'User', entityId: user.id, ipAddress: requestIp(request) })
+    return reply.send({ success: true })
   })
 
   app.post('/api/auth/set-password', { config: { rateLimit: { max: 8, timeWindow: '1 minute' } } }, async (request, reply) => {

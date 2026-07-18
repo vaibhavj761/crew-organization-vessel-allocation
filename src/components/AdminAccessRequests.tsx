@@ -51,6 +51,7 @@ type AccessRefreshReason = 'page-open' | 'manual-refresh' | 'post-action'
 export function AdminAccessRequests() {
   const [users, setUsers] = useState<RequestItem[]>([])
   const [roleDrafts, setRoleDrafts] = useState<Record<string, Role>>({})
+  const [identityDrafts, setIdentityDrafts] = useState<Record<string, { name: string; email: string }>>({})
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [setupLink, setSetupLink] = useState('')
@@ -58,20 +59,23 @@ export function AdminAccessRequests() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshNotice, setRefreshNotice] = useState('')
   const busyIdRef = useRef('')
-  const hasUnsavedRoleDraftsRef = useRef(false)
+  const hasUnsavedDraftsRef = useRef(false)
 
-  const hasUnsavedRoleDrafts = users.some((item) => (roleDrafts[item.id] || item.role) !== item.role)
+  const hasUnsavedDrafts = users.some((item) => {
+    const identity = identityDrafts[item.id]
+    return (roleDrafts[item.id] || item.role) !== item.role || !!identity && (identity.name !== item.name || identity.email !== item.email)
+  })
   useEffect(() => {
     busyIdRef.current = busyId
   }, [busyId])
   useEffect(() => {
-    hasUnsavedRoleDraftsRef.current = hasUnsavedRoleDrafts
-  }, [hasUnsavedRoleDrafts])
+    hasUnsavedDraftsRef.current = hasUnsavedDrafts
+  }, [hasUnsavedDrafts])
 
   const load = useCallback(async (reason: AccessRefreshReason, fresh = true) => {
     if (busyIdRef.current) return
-    if (reason !== 'post-action' && hasUnsavedRoleDraftsRef.current) {
-      setRefreshNotice('New access-request data is available. Save or finish your role edits before refreshing.')
+    if (reason !== 'post-action' && hasUnsavedDraftsRef.current) {
+      setRefreshNotice('Save or finish your pending user edits before refreshing.')
       return
     }
     setIsRefreshing(true)
@@ -81,6 +85,7 @@ export function AdminAccessRequests() {
       const response = await apiClient.request<{ requests: RequestItem[] }>('/api/admin/access-requests', { fresh })
       setUsers(response.requests)
       setRoleDrafts(Object.fromEntries(response.requests.map((item) => [item.id, item.role || 'VIEWER'])))
+      setIdentityDrafts(Object.fromEntries(response.requests.map((item) => [item.id, { name: item.name, email: item.email }])))
       setRefreshNotice('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load access requests')
@@ -162,7 +167,7 @@ export function AdminAccessRequests() {
     }
   }
 
-  const updateUser = async (id: string, payload: { role?: Role; status?: Extract<Status, 'ACTIVE' | 'DISABLED'> }) => {
+  const updateUser = async (id: string, payload: { name?: string; email?: string; role?: Role; status?: Extract<Status, 'ACTIVE' | 'DISABLED'> }, successMessage = 'User updated successfully.') => {
     setBusyId(id)
     setError('')
     setMessage('')
@@ -171,13 +176,24 @@ export function AdminAccessRequests() {
         method: 'PATCH',
         body: JSON.stringify(payload),
       })
-      setMessage('User updated successfully.')
+      setMessage(successMessage)
       await load('post-action', true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'User update failed')
     } finally {
       setBusyId('')
     }
+  }
+
+  const saveIdentity = async (item: RequestItem) => {
+    const draft = identityDrafts[item.id] || { name: item.name, email: item.email }
+    const name = draft.name.trim()
+    const email = draft.email.trim().toLowerCase()
+    setError('')
+    if (!name) return setError('User name is required.')
+    if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Enter a valid user email address.')
+    if (!window.confirm(`Confirm name and email update for ${item.name}?`)) return
+    await updateUser(item.id, { name, email }, 'User name and email updated.')
   }
 
   const copyMessage = async () => {
@@ -230,6 +246,9 @@ export function AdminAccessRequests() {
               item={item}
               roleDraft={roleDrafts[item.id] || 'VIEWER'}
               setRoleDraft={(role) => setRoleDrafts((current) => ({ ...current, [item.id]: role }))}
+              identityDraft={identityDrafts[item.id] || { name: item.name, email: item.email }}
+              setIdentityDraft={(identity) => setIdentityDrafts((current) => ({ ...current, [item.id]: identity }))}
+              onSaveIdentity={() => void saveIdentity(item)}
               busy={busyId === item.id}
               actions={
                 <>
@@ -247,6 +266,9 @@ export function AdminAccessRequests() {
               item={item}
               roleDraft={roleDrafts[item.id] || item.role}
               setRoleDraft={(role) => setRoleDrafts((current) => ({ ...current, [item.id]: role }))}
+              identityDraft={identityDrafts[item.id] || { name: item.name, email: item.email }}
+              setIdentityDraft={(identity) => setIdentityDrafts((current) => ({ ...current, [item.id]: identity }))}
+              onSaveIdentity={() => void saveIdentity(item)}
               busy={busyId === item.id}
               actions={
                 <>
@@ -265,6 +287,9 @@ export function AdminAccessRequests() {
               item={item}
               roleDraft={roleDrafts[item.id] || item.role}
               setRoleDraft={(role) => setRoleDrafts((current) => ({ ...current, [item.id]: role }))}
+              identityDraft={identityDrafts[item.id] || { name: item.name, email: item.email }}
+              setIdentityDraft={(identity) => setIdentityDrafts((current) => ({ ...current, [item.id]: identity }))}
+              onSaveIdentity={() => void saveIdentity(item)}
               busy={busyId === item.id}
               actions={
                 <>
@@ -283,6 +308,9 @@ export function AdminAccessRequests() {
               item={item}
               roleDraft={roleDrafts[item.id] || item.role}
               setRoleDraft={(role) => setRoleDrafts((current) => ({ ...current, [item.id]: role }))}
+              identityDraft={identityDrafts[item.id] || { name: item.name, email: item.email }}
+              setIdentityDraft={(identity) => setIdentityDrafts((current) => ({ ...current, [item.id]: identity }))}
+              onSaveIdentity={() => void saveIdentity(item)}
               busy={busyId === item.id}
               actions={
                 item.status === 'DISABLED'
@@ -317,12 +345,18 @@ function UserCard({
   item,
   roleDraft,
   setRoleDraft,
+  identityDraft,
+  setIdentityDraft,
+  onSaveIdentity,
   busy,
   actions,
 }: {
   item: RequestItem
   roleDraft: Role
   setRoleDraft: (role: Role) => void
+  identityDraft: { name: string; email: string }
+  setIdentityDraft: (identity: { name: string; email: string }) => void
+  onSaveIdentity: () => void
   busy: boolean
   actions: React.ReactNode
 }) {
@@ -334,6 +368,11 @@ function UserCard({
           <p>{item.email}{item.department ? ` · ${item.department}` : ''}</p>
         </div>
         <span className={`status-pill status-${item.status.toLowerCase()}`}>{friendlyStatus(item.status)}</span>
+      </div>
+      <div className="admin-identity-grid">
+        <label className="field"><span>User name</span><input value={identityDraft.name} onChange={(event) => setIdentityDraft({ ...identityDraft, name: event.target.value })} disabled={busy} /></label>
+        <label className="field"><span>Email address</span><input type="email" value={identityDraft.email} onChange={(event) => setIdentityDraft({ ...identityDraft, email: event.target.value })} disabled={busy} /></label>
+        <button className="button secondary" type="button" onClick={onSaveIdentity} disabled={busy || (identityDraft.name === item.name && identityDraft.email === item.email)}>Save identity</button>
       </div>
       <p className="helper-copy">{item.accessRequestMessage || 'No request message provided.'}</p>
       <div className="admin-user-meta">

@@ -48,7 +48,7 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
         vesselManager: '',
         crewManagerId: '',
         assignedAssistantId: '',
-        vesselStatus: 'UPCOMING',
+        vesselStatus: 'IN_MANAGEMENT',
         managementType: 'FULL_MANAGED',
         notes: '',
         sortOrder: data.vessels.length + 1,

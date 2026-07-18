@@ -5,6 +5,7 @@ import { requireCurrentUser } from '../auth/context.js'
 import { badRequest, forbidden, notFound } from '../utils/http.js'
 import { createPasswordToken } from '../services/passwordTokens.js'
 import { requestIp, writeAuditLog } from '../services/audit.js'
+import { toSafeUser } from '../utils/safeUser.js'
 
 const accessRequestSchema = z.object({
   name: z.string().min(1),
@@ -18,6 +19,8 @@ const approveSchema = z.object({
 })
 
 const updateUserSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required.').optional(),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address.').optional(),
   role: z.enum(['ADMIN', 'EDITOR', 'VIEWER', 'BOSS_VIEWER']).optional(),
   status: z.enum(['ACTIVE', 'DISABLED', 'APPROVED_NEEDS_PASSWORD', 'REJECTED']).optional(),
 })
@@ -211,11 +214,18 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     const user = await prisma.user.findUnique({ where: { id: params.id } })
     if (!user) return notFound(reply, 'User not found')
     if (user.id === admin.id && parsed.data.role && parsed.data.role !== 'ADMIN') return badRequest(reply, 'You cannot remove your own admin role.')
+    if (user.id === admin.id && parsed.data.email && parsed.data.email !== user.email) return badRequest(reply, 'Use Account settings to change your own email address securely.')
+    if (parsed.data.email && parsed.data.email !== user.email) {
+      const duplicate = await prisma.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } })
+      if (duplicate) return reply.code(409).send({ message: 'That email address is already in use.' })
+    }
 
     const nextRole = parsed.data.role ?? user.role
     const nextStatus = parsed.data.status ?? user.status
     const nextIsActive = nextStatus !== 'DISABLED'
-    const permissionChanged = nextRole !== user.role || nextStatus !== user.status || nextIsActive !== user.isActive
+    const nextName = parsed.data.name ?? user.name
+    const nextEmail = parsed.data.email ?? user.email
+    const permissionChanged = nextRole !== user.role || nextStatus !== user.status || nextIsActive !== user.isActive || nextEmail !== user.email
     const removingAdminPower = user.role === 'ADMIN' && (nextRole !== 'ADMIN' || !nextIsActive)
     if (removingAdminPower && await activeAdminCount() <= 1) {
       return badRequest(reply, 'The last remaining admin cannot be disabled or downgraded.')
@@ -224,6 +234,8 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
+        name: nextName,
+        email: nextEmail,
         role: nextRole,
         status: nextStatus,
         isActive: nextIsActive,
@@ -238,11 +250,11 @@ export async function accessRequestRoutes(app: FastifyInstance) {
       action: 'user.updated',
       entityType: 'User',
       entityId: updated.id,
-      beforeJson: { role: user.role, status: user.status, isActive: user.isActive },
-      afterJson: { role: updated.role, status: updated.status, isActive: updated.isActive },
+      beforeJson: { name: user.name, email: user.email, role: user.role, status: user.status, isActive: user.isActive },
+      afterJson: { name: updated.name, email: updated.email, role: updated.role, status: updated.status, isActive: updated.isActive },
       ipAddress: requestIp(request),
     })
 
-    return reply.send({ success: true, user: updated })
+    return reply.send({ success: true, user: toSafeUser(updated) })
   })
 }

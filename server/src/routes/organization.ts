@@ -440,11 +440,11 @@ export async function organizationRoutes(app: FastifyInstance) {
     const params = request.params as { id: string }
     const existing = await prisma.vessel.findUnique({ where: { id: params.id }, include: { vesselAllocations: { take: 1, orderBy: { allocatedAt: 'desc' } } } })
     if (!existing) return notFound(reply, 'Vessel not found')
-    const currentAllocation = existing.vesselAllocations[0] || null
-    const targetCrewManagerId = parsed.data.crewManagerId ?? currentAllocation?.crewManagerId
-    if (!targetCrewManagerId) return badRequest(reply, 'Assignment is required.')
-    const crewManager = await prisma.crewManager.findUnique({ where: { id: targetCrewManagerId } })
-    if (!crewManager) return notFound(reply, 'Crew manager not found')
+    const targetCrewManagerId = parsed.data.crewManagerId
+    const crewManager = targetCrewManagerId
+      ? await prisma.crewManager.findUnique({ where: { id: targetCrewManagerId } })
+      : null
+    if (targetCrewManagerId && !crewManager) return notFound(reply, 'Crew manager not found')
     const updated = await prisma.$transaction(async (tx) => {
       const vessel = await tx.vessel.update({
         where: { id: existing.id },
@@ -465,20 +465,22 @@ export async function organizationRoutes(app: FastifyInstance) {
           sortOrder: parsed.data.sortOrder,
         } as Prisma.VesselUpdateInput,
       })
-      await tx.vesselAllocation.upsert({
-        where: { vesselId: vessel.id },
-        create: {
-          vesselId: vessel.id,
-          crewManagerId: crewManager.id,
-          assignedAssistantId: null,
-          allocatedAt: new Date(),
-        },
-        update: {
-          crewManagerId: crewManager.id,
-          assignedAssistantId: null,
-          allocatedAt: new Date(),
-        },
-      })
+      if (crewManager) {
+        await tx.vesselAllocation.upsert({
+          where: { vesselId: vessel.id },
+          create: {
+            vesselId: vessel.id,
+            crewManagerId: crewManager.id,
+            assignedAssistantId: null,
+            allocatedAt: new Date(),
+          },
+          update: {
+            crewManagerId: crewManager.id,
+            assignedAssistantId: null,
+            allocatedAt: new Date(),
+          },
+        })
+      }
       return vessel
     })
     await writeAuditLog({ userId: user.id, action: 'vessel.update', entityType: 'Vessel', entityId: updated.id, beforeJson: existing, afterJson: updated, ipAddress: requestIp(request) })
@@ -524,6 +526,20 @@ export async function organizationRoutes(app: FastifyInstance) {
     })
     await writeAuditLog({ userId: user.id, action: 'vessel.allocation.update', entityType: 'VesselAllocation', entityId: allocation.id, beforeJson: before, afterJson: allocation, ipAddress: requestIp(request) })
     return reply.send(allocation)
+  })
+
+  app.delete('/api/vessels/:id/allocation', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const params = request.params as { id: string }
+    const vessel = await prisma.vessel.findUnique({ where: { id: params.id } })
+    if (!vessel) return notFound(reply, 'Vessel not found')
+    const before = await prisma.vesselAllocation.findUnique({ where: { vesselId: vessel.id } })
+    if (before) {
+      await prisma.vesselAllocation.delete({ where: { vesselId: vessel.id } })
+      await writeAuditLog({ userId: user.id, action: 'vessel.allocation.remove', entityType: 'VesselAllocation', entityId: before.id, beforeJson: before, ipAddress: requestIp(request) })
+    }
+    return reply.send({ success: true })
   })
 
   app.get('/api/reports/summary', async (request, reply) => {

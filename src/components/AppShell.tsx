@@ -373,7 +373,7 @@ export function AppShell({
                 {viewMode === 'overview' ? (
                   <OrgChartView selectedDirectorId={selectedDirector} canEdit={canEdit} />
                 ) : (
-                  <OperationsAllocationView crewDirectorId={selectedDirector} operationsManagerId={selectedOps} deputyManagerId={selectedDeputy} crewManagerId={selectedCrewManager} />
+                  <OperationsAllocationView crewDirectorId={selectedDirector} operationsManagerId={selectedOps} deputyManagerId={selectedDeputy} crewManagerId={selectedCrewManager} canEdit={canEdit} />
                 )}
                 </ChartErrorBoundary>
               </div>

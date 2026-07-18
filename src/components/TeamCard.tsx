@@ -2,7 +2,7 @@ import type { CrewManagerNode, Vessel } from '../types'
 import { getVesselColumnCount } from '../utils/operationsAllocation'
 import { getViewportVesselColumnCount } from '../utils/chartLayout'
 import { VesselTag } from './VesselTag'
-import { Pencil } from 'lucide-react'
+import { Pencil, Plus, Unlink } from 'lucide-react'
 
 export function TeamCard({
   team,
@@ -12,6 +12,9 @@ export function TeamCard({
   vesselNamesOnly = false,
   showVessels = true,
   onEdit,
+  onAssignVessel,
+  onEditVessel,
+  onUnassignVessel,
 }: {
   team: CrewManagerNode
   vessels: Vessel[]
@@ -20,6 +23,9 @@ export function TeamCard({
   vesselNamesOnly?: boolean
   showVessels?: boolean
   onEdit?: () => void
+  onAssignVessel?: () => void
+  onEditVessel?: (vessel: Vessel) => void
+  onUnassignVessel?: (vessel: Vessel) => void
 }) {
   const visible = vesselNamesOnly ? vessels : vessels.slice(0, compact ? 3 : 12)
   const vesselColumns = vesselNamesOnly ? getVesselColumnCount(vessels.length) : allocation ? 2 : getViewportVesselColumnCount(vessels.length)
@@ -41,6 +47,7 @@ export function TeamCard({
         <div className="section-label">
           <span>{vesselNamesOnly ? 'Allocated vessel names' : 'Vessel allocation'}</span>
           <b>{vessels.length}</b>
+          {onAssignVessel ? <button type="button" className="allocation-add-button" onClick={onAssignVessel}><Plus size={12} /> Assign vessel</button> : null}
         </div>
 
         <div className={`vessel-list ${vesselNamesOnly ? `vessel-name-grid columns-${vesselColumns}` : ''}`}>
@@ -48,10 +55,11 @@ export function TeamCard({
             vesselNamesOnly ? (
               <span
                 key={vessel.id}
-                className="vessel-name-pill"
+                className={`vessel-name-pill ${onEditVessel ? 'vessel-name-pill--editable' : ''}`}
                 title={vessel.name}
               >
-                {vessel.name}
+                {onEditVessel ? <button type="button" className="vessel-name-button" onClick={() => onEditVessel(vessel)}>{vessel.name}</button> : <span>{vessel.name}</span>}
+                {onUnassignVessel ? <button type="button" className="vessel-unassign-button" onClick={() => onUnassignVessel(vessel)} title={`Remove ${vessel.name} from this allocation`} aria-label={`Remove ${vessel.name} from this allocation`}><Unlink size={11} /></button> : null}
               </span>
             ) : (
               <VesselTag key={vessel.id} vessel={vessel} detailed={allocation} />

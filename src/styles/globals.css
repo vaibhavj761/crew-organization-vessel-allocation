@@ -402,6 +402,52 @@ button:disabled { cursor: not-allowed; opacity: .35; }
   .zoom-controls { width: 100%; }
 }
 
+/* Confirmed vessel-allocation and account workflows */
+.allocation-add-button { margin-left: auto; border: 1px solid #aec4d1; border-radius: .3cqw; padding: .24cqw .38cqw; background: #fff; color: #244f69; display: inline-flex; align-items: center; gap: .22cqw; font: inherit; font-weight: 800; cursor: pointer; }
+.allocation-add-button:hover, .allocation-add-button:focus-visible { border-color: #5e8eaa; background: #eef6fa; outline: 2px solid rgba(75,136,170,.2); outline-offset: 1px; }
+.vessel-name-pill--editable { display: flex; align-items: center; gap: .2cqw; padding: .2cqw .25cqw .2cqw .45cqw; }
+.vessel-name-button { min-width: 0; flex: 1; border: 0; padding: .2cqw 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; line-height: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.vessel-name-button:disabled { cursor: default; }
+.vessel-name-button:not(:disabled):hover, .vessel-name-button:not(:disabled):focus-visible { color: #0d5a86; text-decoration: underline; outline: 0; }
+.vessel-unassign-button { width: 1.25cqw; min-width: 20px; height: 1.25cqw; min-height: 20px; border: 0; border-radius: 999px; background: transparent; color: #6c8190; display: grid; place-items: center; cursor: pointer; }
+.vessel-unassign-button:hover, .vessel-unassign-button:focus-visible { background: #fff0ee; color: #ad372d; outline: 2px solid rgba(173,55,45,.18); }
+
+.allocation-dialog-backdrop, .account-dialog-backdrop { z-index: 4000; backdrop-filter: blur(4px); }
+.allocation-dialog, .account-settings-dialog { width: min(720px, 100%); max-height: min(88vh, 820px); overflow: auto; padding: 0; text-align: left; border: 1px solid #cad7df; border-radius: 15px; }
+.allocation-dialog__heading { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; border-bottom: 1px solid #dde6eb; background: linear-gradient(180deg,#fbfcfd,#f3f7f9); }
+.allocation-dialog__heading span { display: block; margin-bottom: 3px; color: #54778d; font-size: 10px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+.allocation-dialog__heading h3 { font-size: 19px; }
+.allocation-dialog > .helper-copy, .allocation-dialog > .field, .allocation-dialog > .form-error, .allocation-removal-summary { margin-left: 22px; margin-right: 22px; }
+.allocation-dialog > .helper-copy { margin-top: 18px; }
+.allocation-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; padding: 16px 22px 4px; }
+.allocation-form-wide { grid-column: 1 / -1; }
+.allocation-removal-summary { margin-top: 20px; padding: 16px; border: 1px solid #ecd4d0; border-radius: 9px; background: #fff8f7; display: grid; gap: 5px; }
+.allocation-removal-summary strong { color: #7e211b; font-size: 16px; }
+.allocation-removal-summary span, .allocation-removal-summary p { margin: 0; }
+.allocation-dialog > .dialog-actions, .account-settings-dialog > .dialog-actions { position: sticky; bottom: 0; justify-content: flex-end; padding: 15px 22px; border-top: 1px solid #e1e8ec; background: #fbfcfd; }
+.danger-button { background: #a9342b; border-color: #a9342b; }
+.danger-button:hover { background: #8d2a23; }
+
+.account-settings-dialog { width: min(690px,100%); }
+.account-settings-section { display: grid; gap: 12px; padding: 20px 22px; border-bottom: 1px solid #e4eaee; }
+.account-settings-section > div:first-child strong { color: #153b56; font-size: 14px; }
+.account-settings-section > div:first-child p { margin: 4px 0 0; }
+.account-settings-section .allocation-form-grid { padding: 0; }
+.account-settings-section > .button { justify-self: start; }
+.account-settings-dialog > .form-error, .account-settings-dialog > .admin-feedback { margin: 14px 22px 0; }
+
+.admin-identity-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.35fr) auto; gap: 10px; align-items: end; padding: 12px; border: 1px solid #dde6eb; border-radius: 8px; background: #f7fafb; }
+.admin-identity-grid .button { min-height: 35px; }
+
+@media (max-width: 700px) {
+  .allocation-dialog-backdrop, .account-dialog-backdrop { padding: 10px; align-items: end; }
+  .allocation-dialog, .account-settings-dialog { max-height: 94vh; border-radius: 14px 14px 7px 7px; }
+  .allocation-form-grid, .admin-identity-grid { grid-template-columns: 1fr; }
+  .allocation-form-wide { grid-column: auto; }
+  .allocation-dialog > .dialog-actions, .account-settings-dialog > .dialog-actions { flex-direction: column-reverse; }
+  .allocation-dialog > .dialog-actions .button, .account-settings-dialog > .dialog-actions .button, .admin-identity-grid .button { width: 100%; }
+}
+
 /* Enterprise application shell and shared page system */
 .app-shell {
   display: grid;

@@ -11,7 +11,8 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "seed:admin": "tsx scripts/seedAdmin.ts",
     "seed:cm-asia": "tsx scripts/seedCmAsiaHierarchy.ts",
-    "seed:cm-asia:built": "node dist/scripts/seedCmAsiaHierarchy.js"
+    "seed:cm-asia:built": "node dist/scripts/seedCmAsiaHierarchy.js",
+    "data:mark-vessels-active": "tsx scripts/markVesselsActive.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",
