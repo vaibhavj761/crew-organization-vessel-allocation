@@ -1,0 +1,29 @@
+{
+  "documentType": "codex-security.coverage",
+  "schemaVersion": "1.0",
+  "scanId": "dc695788-a9d3-41ab-a342-81d3ef2aeeb4",
+  "mode": "repository",
+  "completeness": "complete",
+  "inventoryStrategy": "repository",
+  "includePaths": ["."],
+  "excludePaths": ["node_modules/", "dist/", "server/dist/", ".git/"],
+  "surfaces": [
+    { "id": "surface_authentication", "label": "Authentication and session lifecycle", "disposition": "reported", "riskArea": "Authentication", "receiptRefs": ["artifacts/02_discovery/worker-auth-1.md", "artifacts/04_validation/auth-validation.md", "artifacts/06_attack_paths/auth-attack-paths.md"] },
+    { "id": "surface_admin_access", "label": "Administrative access and password-link generation", "disposition": "reported", "riskArea": "Authorization", "receiptRefs": ["artifacts/02_discovery/worker-admin-1.md", "artifacts/04_validation/admin-validation.md", "artifacts/06_attack_paths/admin-attack-paths.md"] },
+    { "id": "surface_rbac", "label": "Backend role enforcement", "disposition": "no_issue_found", "riskArea": "Authorization", "receiptRefs": ["artifacts/02_discovery/worker-admin-1.md", "artifacts/02_discovery/worker-org-1.md"] },
+    { "id": "surface_org_data", "label": "Organization, hierarchy, vessel, and allocation mutations", "disposition": "rejected", "riskArea": "Object authorization", "receiptRefs": ["artifacts/02_discovery/worker-org-1.md", "artifacts/04_validation/org-ai-validation.md", "artifacts/06_attack_paths/org-ai-attack-paths.md"], "notes": "Validated relationship candidates require existing global writer authority and do not cross a tenant boundary in the reviewed model." },
+    { "id": "surface_ai", "label": "AI provider, preview, and confirmation pipeline", "disposition": "rejected", "riskArea": "External integration", "receiptRefs": ["artifacts/02_discovery/worker-ai-1.md", "artifacts/02_discovery/worker-ai-2.md", "artifacts/02_discovery/worker-ai-3.md", "artifacts/04_validation/org-ai-validation.md"] },
+    { "id": "surface_frontend", "label": "Frontend routes, role-aware actions, and API state", "disposition": "no_issue_found", "riskArea": "Client security", "receiptRefs": ["artifacts/02_discovery/worker-front-app-1.md", "artifacts/02_discovery/worker-front-hier-1.md", "artifacts/02_discovery/worker-front-vessel-1.md"] },
+    { "id": "surface_export", "label": "SVG and PNG export content handling", "disposition": "no_issue_found", "riskArea": "Injection", "receiptRefs": ["artifacts/02_discovery/work_ledger.jsonl"] },
+    { "id": "surface_server_boundary", "label": "CORS, cookies, static serving, headers, limits, and errors", "disposition": "no_issue_found", "riskArea": "Web platform", "receiptRefs": ["artifacts/02_discovery/work_ledger.jsonl"] },
+    { "id": "surface_secrets_dependencies", "label": "Secrets, dependency, and build posture", "disposition": "no_issue_found", "riskArea": "Supply chain", "receiptRefs": ["artifacts/02_discovery/work_ledger.jsonl"], "notes": "Production dependency audit returned zero vulnerabilities at review time; frontend and server builds plus 120 tests passed." },
+    { "id": "surface_operations", "label": "Prisma migrations and operator scripts", "disposition": "rejected", "riskArea": "Operations", "receiptRefs": ["artifacts/04_validation/org-ai-validation.md", "artifacts/06_attack_paths/org-ai-attack-paths.md"], "notes": "The destructive migration candidate requires an already database-privileged trusted operator." }
+  ],
+  "explicitExclusions": [
+    { "pattern": "node_modules/", "reason": "Third-party installed dependency trees; dependency audit used instead." },
+    { "pattern": "dist/", "reason": "Generated frontend build output." },
+    { "pattern": "server/dist/", "reason": "Generated backend build output." },
+    { "pattern": ".git/", "reason": "Version-control metadata, not application source." }
+  ],
+  "deferred": []
+}
