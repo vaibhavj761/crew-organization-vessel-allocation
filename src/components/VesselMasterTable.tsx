@@ -3,11 +3,10 @@ import { Plus, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useChart } from '../state/ChartContext'
 import type { Vessel, VesselFilters } from '../types'
-import { createId } from '../utils/createId'
 import { getAllCrewManagers } from '../utils/operationsAllocation'
 import { validateVesselMasterFields } from '../utils/vesselValidation'
+import { VesselCreateDialog } from './VesselCreateDialog'
 
-const id = () => createId()
 
 export function filterVessels(vessels: Vessel[], filters: VesselFilters, operationsManagers: { id: string; crewManagerIds: string[] }[]) {
   const crewManagerIds = filters.operationsManagerId
@@ -25,40 +24,14 @@ export function filterVessels(vessels: Vessel[], filters: VesselFilters, operati
 }
 
 export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
-  const { data, dispatch, loadState } = useChart()
+  const { data, loadState } = useChart()
   const [filters, setFilters] = useState<VesselFilters>({ search: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })
   const [editing, setEditing] = useState('')
+  const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const crewManagers = getAllCrewManagers(data)
   const operationsManagers = data.operationsManagers.map((op) => ({ id: op.id, crewManagerIds: op.deputyManagers.flatMap((deputy) => deputy.crewManagers.map((cm) => cm.id)) }))
   const rows = useMemo(() => filterVessels(data.vessels, filters, operationsManagers), [data.vessels, filters])
-
-  const addVessel = () => {
-    if (loadState !== 'ready') return
-    setError('')
-    try {
-      const value: Vessel = {
-        id: id(),
-        name: 'New Vessel',
-        vesselType: '',
-        vesselDoc: '',
-        deadweightTonnage: '',
-        ownerPool: '',
-        ownerName: '',
-        vesselManager: '',
-        crewManagerId: '',
-        assignedAssistantId: '',
-        vesselStatus: 'IN_MANAGEMENT',
-        managementType: 'FULL_MANAGED',
-        notes: '',
-        sortOrder: data.vessels.length + 1,
-      }
-      dispatch({ type: 'addVessel', value })
-      setEditing(value.id)
-    } catch {
-      setError('Vessel could not be added. Please try again.')
-    }
-  }
 
   return (
     <div className="vessel-master">
@@ -67,7 +40,7 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
           <h2>Vessel Master List</h2>
           <p>{rows.length} of {data.vessels.length} vessels</p>
         </div>
-        {canEdit ? <button type="button" className="button" onClick={addVessel} disabled={loadState !== 'ready'}><Plus size={14} /> Add vessel</button> : null}
+        {canEdit ? <button type="button" className="button" onClick={() => { setError(''); setCreating(true) }} disabled={loadState !== 'ready'}><Plus size={14} /> Add vessel</button> : null}
       </div>
       {canEdit ? <p className="helper-copy">Required fields: Vessel name, Vessel type, Assignment.</p> : null}
 
@@ -126,6 +99,7 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
           </tbody>
         </table>
       </div>
+      {creating ? <VesselCreateDialog onClose={() => setCreating(false)} /> : null}
     </div>
   )
 }

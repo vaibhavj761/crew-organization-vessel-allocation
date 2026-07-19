@@ -2,7 +2,7 @@ import type { CrewManagerNode, Vessel } from '../types'
 import { getVesselColumnCount } from '../utils/operationsAllocation'
 import { getViewportVesselColumnCount } from '../utils/chartLayout'
 import { VesselTag } from './VesselTag'
-import { Pencil, Plus, Unlink } from 'lucide-react'
+import { Pencil, Plus, X } from 'lucide-react'
 
 export function TeamCard({
   team,
@@ -11,6 +11,7 @@ export function TeamCard({
   allocation = false,
   vesselNamesOnly = false,
   showVessels = true,
+  showVesselCountTooltip = false,
   onEdit,
   onAssignVessel,
   onEditVessel,
@@ -22,6 +23,7 @@ export function TeamCard({
   allocation?: boolean
   vesselNamesOnly?: boolean
   showVessels?: boolean
+  showVesselCountTooltip?: boolean
   onEdit?: () => void
   onAssignVessel?: () => void
   onEditVessel?: (vessel: Vessel) => void
@@ -30,6 +32,9 @@ export function TeamCard({
   const visible = vesselNamesOnly ? vessels : vessels.slice(0, compact ? 3 : 12)
   const vesselColumns = vesselNamesOnly ? getVesselColumnCount(vessels.length) : allocation ? 2 : getViewportVesselColumnCount(vessels.length)
   const countLabel = showVessels ? `${vessels.length} vessels` : vessels.length ? String(vessels.length) : team.person.notes
+  const vesselCountTitle = showVesselCountTooltip && vessels.length
+    ? `Assigned vessels: ${vessels.map((vessel) => vessel.name).join(', ')}`
+    : undefined
 
   return (
     <article className={`team-card ${allocation ? 'allocation-card' : ''} ${vesselNamesOnly ? 'names-only-card' : ''} ${showVessels ? '' : 'structure-card'} vessels-${Math.min(vesselColumns, 3)}`}>
@@ -40,7 +45,21 @@ export function TeamCard({
           <h3>{team.person.name || 'Unnamed manager'}</h3>
           <p className="team-designation">{team.person.designation || 'Designation not set'}</p>
         </div>
-        {countLabel ? <b className="vessel-count">{countLabel}</b> : null}
+        {countLabel ? (
+          <b
+            className={`vessel-count ${vesselCountTitle ? 'vessel-count--has-tooltip' : ''}`}
+            aria-label={vesselCountTitle}
+            tabIndex={vesselCountTitle ? 0 : undefined}
+          >
+            {countLabel}
+            {vesselCountTitle ? (
+              <span className="vessel-count-tooltip" role="tooltip">
+                <strong>Assigned vessels</strong>
+                {vessels.map((vessel) => <span key={vessel.id}>{vessel.name}</span>)}
+              </span>
+            ) : null}
+          </b>
+        ) : null}
       </header>
 
       {showVessels ? <section className="team-section vessel-section">
@@ -59,7 +78,7 @@ export function TeamCard({
                 title={vessel.name}
               >
                 {onEditVessel ? <button type="button" className="vessel-name-button" onClick={() => onEditVessel(vessel)}>{vessel.name}</button> : <span>{vessel.name}</span>}
-                {onUnassignVessel ? <button type="button" className="vessel-unassign-button" onClick={() => onUnassignVessel(vessel)} title={`Remove ${vessel.name} from this allocation`} aria-label={`Remove ${vessel.name} from this allocation`}><Unlink size={11} /></button> : null}
+                {onUnassignVessel ? <button type="button" className="vessel-unassign-button" onClick={() => onUnassignVessel(vessel)} title={`Remove ${vessel.name} from this allocation`} aria-label={`Remove ${vessel.name} from this allocation`}><X size={13} strokeWidth={2.6} /></button> : null}
               </span>
             ) : (
               <VesselTag key={vessel.id} vessel={vessel} detailed={allocation} />

@@ -120,6 +120,19 @@ describe('AppShell role layout', () => {
     expect(refreshWorkspaceDataMock).not.toHaveBeenCalled()
   })
 
+  it('starts with a collapsed icon rail and expands navigation labels on request', () => {
+    const { container } = renderShell('ADMIN', 'dashboard')
+
+    expect(container.firstElementChild).toHaveClass('nav-collapsed')
+    expect(container.querySelector('.app-sidebar')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Organization Chart' })).toHaveAttribute('data-nav-label', 'Organization Chart')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show menu' }))
+
+    expect(container.firstElementChild).not.toHaveClass('nav-collapsed')
+    expect(screen.getByRole('button', { name: 'Organization Chart' })).toBeVisible()
+  })
+
   it('uses expanded professional layout for read-only users without the editor sidebar', () => {
     const { container } = renderShell('VIEWER', 'overview')
     expect(container.firstElementChild).toHaveClass('editor-collapsed')
@@ -131,9 +144,13 @@ describe('AppShell role layout', () => {
     expect(container.querySelector('.presentation-frame.view-overview')).not.toBeNull()
   })
 
-  it('keeps chart controls compact above the presentation canvas', () => {
+  it('keeps chart controls compact above the presentation canvas', async () => {
     const { container } = renderShell('EDITOR', 'overview')
 
+    expect(screen.queryByText('Editor Panel')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show chart editor' }))
+    expect(await screen.findByText('Editor Panel')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hide chart editor' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Fit' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument()
     expect(container.querySelector('.canvas-toolbar')).not.toBeNull()
@@ -142,15 +159,15 @@ describe('AppShell role layout', () => {
   })
 
   it('hides access management navigation for non-admin roles', () => {
-    renderShell('BOSS_VIEWER', 'dashboard')
+    renderShell('VIEWER', 'dashboard')
     expect(screen.queryByText('Access management')).not.toBeInTheDocument()
   })
 
-  it('keeps access management full width for admins without showing the editor panel', () => {
+  it('keeps access management full width for admins without showing the editor panel', async () => {
     const { container } = renderShell('ADMIN', 'access')
     expect(container.firstElementChild).toHaveClass('editor-collapsed')
     expect(container.firstElementChild).toHaveClass('workspace-full')
-    expect(screen.getAllByText('Access Management').length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Access Management')).length).toBeGreaterThan(0)
     expect(screen.queryByText('Editor Panel')).not.toBeInTheDocument()
   })
 

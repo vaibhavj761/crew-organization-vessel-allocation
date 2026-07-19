@@ -5,13 +5,12 @@ import { ApiError } from './api/client'
 import { LoginPage } from './components/LoginPage'
 import { AppShell } from './components/AppShell'
 import type { SafeUser, ViewMode } from './types'
-import { RequestAccessPage } from './components/RequestAccessPage'
 import { ForgotPasswordPage } from './components/ForgotPasswordPage'
 import { SetPasswordPage } from './components/SetPasswordPage'
 import { ChartProvider } from './state/ChartContext'
 import { canEditChart, canManageAccess } from './utils/permissions'
 
-const publicRoutes = new Set(['/request-access', '/forgot-password', '/set-password', '/reset-password'])
+const publicRoutes = new Set(['/forgot-password', '/set-password', '/reset-password'])
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000
 const WARNING_TIMEOUT_MS = 9 * 60 * 1000
 
@@ -65,6 +64,10 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (pathname === '/request-access') {
+      navigate('/', true)
+      return
+    }
     if (pathname === '/operations-detail' || pathname === '/vessel-allocation') {
       navigate('/operations-allocation', true)
       return
@@ -180,15 +183,12 @@ export default function App() {
   if (pathname === '/reset-password' && token) {
     return <SetPasswordPage token={token} title="Reset password" endpoint="/api/auth/reset-password" onDone={() => navigate('/', true)} message={user ? 'You are currently signed in. Completing this will reset the password for the account linked to this reset link.' : undefined} />
   }
-  if (pathname === '/request-access') {
-    return <RequestAccessPage onBack={() => navigate(user ? '/' : '/', true)} />
-  }
   if (pathname === '/forgot-password') {
     return <ForgotPasswordPage onBack={() => navigate(user ? '/' : '/', true)} />
   }
 
   if (!user) {
-    return <LoginPage notice={loginNotice} onLogin={(nextUser) => { setUser(nextUser); setLoginNotice(''); navigate(publicRoutes.has(pathname) ? '/' : pathname || '/', true) }} onRequestAccess={() => navigate('/request-access')} onForgotPassword={() => navigate('/forgot-password')} />
+    return <LoginPage notice={loginNotice} onLogin={(nextUser) => { setUser(nextUser); setLoginNotice(''); navigate(publicRoutes.has(pathname) ? '/' : pathname || '/', true) }} onForgotPassword={() => navigate('/forgot-password')} />
   }
 
   const canEdit = canEditChart(user)

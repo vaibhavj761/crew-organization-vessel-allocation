@@ -24,9 +24,9 @@ function makeUser(role: SafeUser['role']): SafeUser {
 }
 
 describe('AuthShell role display', () => {
-  it('renders BOSS_VIEWER as VIEWER in the UI', () => {
-    render(<AuthShell user={makeUser('BOSS_VIEWER')} onLogout={vi.fn()} onRefresh={vi.fn()} />)
+  it('renders Viewer as read-only access', () => {
+    render(<AuthShell user={makeUser('VIEWER')} onLogout={vi.fn()} onRefresh={vi.fn()} />)
     expect(screen.getByText('VIEWER · ACTIVE')).toBeInTheDocument()
-    expect(screen.queryByText(/Boss Viewer/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Read-only access')).toBeInTheDocument()
   })
 })

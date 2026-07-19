@@ -12,6 +12,7 @@ import {
   mapHierarchyResponseToChartState,
   mapOperationsManagerToApiPayload,
   mapOrganizationResponseToChartState,
+  mapPersonToApiPayload,
   mapVesselResponseListToChartVessels,
   mapVesselToApiPayload,
 } from './apiMappers'
@@ -57,6 +58,8 @@ interface ChartContextValue {
   syncNotice: string
   saveChanges: () => Promise<void>
   saveHierarchyPerson: (target: HierarchyPersonTarget, person: Person) => Promise<void>
+  createHierarchyPerson: (target: HierarchyCreateTarget, person: Person) => Promise<void>
+  createVesselRecord: (vessel: Vessel) => Promise<void>
   assignVesselFromChart: (vesselId: string, crewManagerId: string) => Promise<void>
   unassignVesselFromChart: (vesselId: string) => Promise<void>
   saveVesselFromChart: (vessel: Vessel) => Promise<void>
@@ -68,6 +71,12 @@ export type HierarchyPersonTarget =
   | { kind: 'operationsManager'; id: string }
   | { kind: 'deputyManager'; id: string; operationsManagerId: string }
   | { kind: 'crewManager'; id: string; deputyManagerId: string }
+
+export type HierarchyCreateTarget =
+  | { kind: 'crewDirector' }
+  | { kind: 'operationsManager'; crewDirectorId: string }
+  | { kind: 'deputyManager'; operationsManagerId: string }
+  | { kind: 'crewManager'; deputyManagerId: string }
 
 const ChartContext = createContext<ChartContextValue | null>(null)
 
@@ -448,6 +457,60 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     }
   }, [data, loadState])
 
+  const createHierarchyPerson = useCallback(async (target: HierarchyCreateTarget, person: Person) => {
+    if (loadState !== 'ready' || syncingRef.current) {
+      throw new Error('Please wait for the current workspace operation to finish.')
+    }
+    if (snapshotRef.current && !equalJson(snapshotRef.current, data)) {
+      throw new Error('Save or refresh your other pending changes before adding a person directly on the chart.')
+    }
+    const organizationId = organizationIdRef.current
+    if (!organizationId) throw new Error('Set up the organization before adding hierarchy records.')
+
+    const normalizedPerson = {
+      ...person,
+      name: person.name.trim(),
+      designation: person.designation.trim(),
+      email: person.email.trim(),
+      phone: person.phone.trim(),
+      notes: person.notes.trim(),
+    }
+    if (!normalizedPerson.name) throw new Error('Name is required.')
+    if (!normalizedPerson.designation) throw new Error('Designation is required.')
+
+    syncingRef.current = true
+    setSaveState('saving')
+    setErrorMessage('')
+    setSyncNotice('Adding hierarchy record…')
+    try {
+      const payload = { organizationId, ...mapPersonToApiPayload(normalizedPerson) }
+      if (target.kind === 'crewDirector') {
+        await hierarchyApi.createCrewDirector({ ...payload, workflowRole: 'CREW_DIRECTOR', sortOrder: data.crewDirectors.length + 1 } as never)
+      } else if (target.kind === 'operationsManager') {
+        const siblingCount = data.operationsManagers.filter((item) => item.crewDirectorId === target.crewDirectorId).length
+        await hierarchyApi.createOperationsManager({ ...payload, workflowRole: 'OPERATIONS_MANAGER', crewDirectorId: target.crewDirectorId, sortOrder: siblingCount + 1 } as never)
+      } else if (target.kind === 'deputyManager') {
+        const parent = data.operationsManagers.find((item) => item.id === target.operationsManagerId)
+        await hierarchyApi.createDeputyManager({ ...payload, workflowRole: 'DEPUTY_MANAGER', operationsManagerId: target.operationsManagerId, sortOrder: (parent?.deputyManagers.length || 0) + 1 } as never)
+      } else {
+        const parent = data.operationsManagers.flatMap((item) => item.deputyManagers).find((item) => item.id === target.deputyManagerId)
+        await hierarchyApi.createCrewManager({ ...payload, workflowRole: 'CREW_MANAGER', deputyManagerId: target.deputyManagerId, sortOrder: (parent?.crewManagers.length || 0) + 1 } as never)
+      }
+      apiClient.clearGetRequestCache()
+      await refreshWorkspaceData('save-success')
+      setSaveState('saved')
+      setSyncNotice('Added and saved to database')
+    } catch (error) {
+      const message = normalizeApiError(error, 'Failed to add hierarchy record')
+      setSaveState('error')
+      setErrorMessage(message)
+      setSyncNotice('')
+      throw new Error(message)
+    } finally {
+      syncingRef.current = false
+    }
+  }, [data, loadState, refreshWorkspaceData])
+
   const runConfirmedVesselWrite = useCallback(async (notice: string, operation: () => Promise<unknown>) => {
     if (loadState !== 'ready' || syncingRef.current) throw new Error('Please wait for the current workspace operation to finish.')
     if (snapshotRef.current && !equalJson(snapshotRef.current, data)) {
@@ -492,9 +555,18 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     await runConfirmedVesselWrite('Updating vessel details…', () => vesselsApi.updateVessel(normalized.id, mapVesselToApiPayload(normalized)))
   }, [runConfirmedVesselWrite])
 
+  const createVesselRecord = useCallback(async (vessel: Vessel) => {
+    const normalized = normalizeVesselTextFields(vessel)
+    const validationMessage = getBlockingVesselValidationMessage([normalized])
+    if (validationMessage) throw new Error(validationMessage)
+    const organizationId = organizationIdRef.current
+    if (!organizationId) throw new Error('Set up the organization before adding vessels.')
+    await runConfirmedVesselWrite('Adding vessel…', () => vesselsApi.createVessel({ organizationId, ...mapVesselToApiPayload(normalized) } as never))
+  }, [runConfirmedVesselWrite])
+
   const value = useMemo(
-    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart, refreshWorkspaceData }),
-    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart, refreshWorkspaceData],
+    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart, refreshWorkspaceData }),
+    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart, refreshWorkspaceData],
   )
 
   return <ChartContext.Provider value={value}>{children}</ChartContext.Provider>

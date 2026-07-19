@@ -1,11 +1,11 @@
-import { Copy, Link2, RefreshCw, ShieldCheck, UserCheck, UserMinus, UserRoundCog } from 'lucide-react'
+import { Copy, Link2, Plus, RefreshCw, ShieldCheck, UserCheck, UserMinus, UserPlus, UserRoundCog } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '../api/client'
 import { copyTextToClipboard } from '../utils/clipboard'
 import { getRoleLabel } from '../utils/roles'
 import { PageHeader, StatusBadge } from './ui'
 
-type Role = 'ADMIN' | 'EDITOR' | 'VIEWER' | 'BOSS_VIEWER'
+type Role = 'ADMIN' | 'EDITOR' | 'VIEWER'
 type Status = 'PENDING_APPROVAL' | 'APPROVED_NEEDS_PASSWORD' | 'ACTIVE' | 'REJECTED' | 'DISABLED'
 
 type RequestItem = {
@@ -27,7 +27,6 @@ const roleOptions: Array<{ value: Role; label: string; help: string }> = [
   { value: 'ADMIN', label: 'Admin', help: 'Full access including user and role management.' },
   { value: 'EDITOR', label: 'Editor', help: 'Can edit organization, hierarchy, vessels, and allocations.' },
   { value: 'VIEWER', label: 'Viewer', help: 'Read-only access to view, filter, and export.' },
-  { value: 'BOSS_VIEWER', label: 'Viewer', help: 'Read-only access to view, filter, and export.' },
 ]
 
 function friendlyRole(role: Role) {
@@ -58,6 +57,7 @@ export function AdminAccessRequests() {
   const [busyId, setBusyId] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshNotice, setRefreshNotice] = useState('')
+  const [newUser, setNewUser] = useState<{ name: string; email: string; role: Role }>({ name: '', email: '', role: 'VIEWER' })
   const busyIdRef = useRef('')
   const hasUnsavedDraftsRef = useRef(false)
 
@@ -73,7 +73,7 @@ export function AdminAccessRequests() {
   }, [hasUnsavedDrafts])
 
   const load = useCallback(async (reason: AccessRefreshReason, fresh = true) => {
-    if (busyIdRef.current) return
+    if (busyIdRef.current && reason !== 'post-action') return
     if (reason !== 'post-action' && hasUnsavedDraftsRef.current) {
       setRefreshNotice('Save or finish your pending user edits before refreshing.')
       return
@@ -104,6 +104,37 @@ export function AdminAccessRequests() {
     active: users.filter((item) => item.status === 'ACTIVE'),
     disabled: users.filter((item) => item.status === 'DISABLED' || item.status === 'REJECTED'),
   }), [users])
+
+  const createUser = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const name = newUser.name.trim()
+    const email = newUser.email.trim().toLowerCase()
+    setError('')
+    setMessage('')
+    if (!name) return setError('User name is required.')
+    if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Enter a valid user email address.')
+
+    setBusyId('create-user')
+    try {
+      const response = await apiClient.request<{ setupLink: string; message: string }>('/api/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, role: newUser.role }),
+      })
+      setSetupLink(response.setupLink)
+      setNewUser({ name: '', email: '', role: 'VIEWER' })
+      try {
+        await copyText(response.setupLink)
+        setMessage('User created. One-time setup link copied.')
+      } catch {
+        setMessage('User created. Copy the one-time setup link manually from the panel below.')
+      }
+      await load('post-action', true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the user.')
+    } finally {
+      setBusyId('')
+    }
+  }
 
   const approve = async (id: string) => {
     setBusyId(id)
@@ -209,7 +240,7 @@ export function AdminAccessRequests() {
 
   return (
     <section className="admin-access-panel page-surface">
-      <PageHeader eyebrow="Administration" title="Access Management" description="Review access requests, assign roles, and manage active user access." actions={<StatusBadge tone="info">Admin only</StatusBadge>} />
+      <PageHeader eyebrow="Administration" title="Access Management" description="Create user accounts, assign roles, and manage active access." actions={<StatusBadge tone="info">Admin only</StatusBadge>} />
       <div className="editor-scroll admin-access-scroll">
         <div className="admin-summary-grid">
           <SummaryCard title="Pending Requests" count={grouped.pending.length} icon={<UserRoundCog size={16} />} />
@@ -218,10 +249,40 @@ export function AdminAccessRequests() {
           <SummaryCard title="Disabled / Rejected" count={grouped.disabled.length} icon={<UserMinus size={16} />} />
         </div>
 
+        <form className="admin-create-user-panel" onSubmit={(event) => void createUser(event)} noValidate>
+          <div className="admin-create-user-heading">
+            <span><UserPlus size={18} /></span>
+            <div>
+              <h2>Create a new user</h2>
+              <p>The user will receive no temporary password. Share the generated one-time setup link securely so they can choose their own password.</p>
+            </div>
+          </div>
+          <div className="admin-create-user-grid">
+            <label className="field">
+              <span>User name <b aria-hidden="true">*</b></span>
+              <input value={newUser.name} onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))} autoComplete="off" required disabled={busyId === 'create-user'} />
+            </label>
+            <label className="field">
+              <span>Email address <b aria-hidden="true">*</b></span>
+              <input type="email" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} autoComplete="off" required disabled={busyId === 'create-user'} />
+            </label>
+            <label className="field">
+              <span>Role <b aria-hidden="true">*</b></span>
+              <select value={newUser.role} onChange={(event) => setNewUser((current) => ({ ...current, role: event.target.value as Role }))} disabled={busyId === 'create-user'}>
+                {roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <button className="button admin-create-user-button" type="submit" disabled={!!busyId || !newUser.name.trim() || !newUser.email.trim()}>
+              <Plus size={15} />
+              {busyId === 'create-user' ? 'Creating…' : 'Create user & setup link'}
+            </button>
+          </div>
+        </form>
+
         <div className="backup-actions">
           <button className="button secondary" onClick={() => void load('manual-refresh', true)} disabled={isRefreshing || !!busyId}>
             <RefreshCw size={14} />
-            {isRefreshing ? 'Refreshing…' : 'Refresh requests'}
+            {isRefreshing ? 'Refreshing…' : 'Refresh users'}
           </button>
         </div>
 

@@ -5,12 +5,10 @@ import { authApi } from '../api/auth'
 
 export function LoginPage({
   onLogin,
-  onRequestAccess,
   onForgotPassword,
   notice = '',
 }: {
   onLogin: (user: SafeUser) => void
-  onRequestAccess: () => void
   onForgotPassword: () => void
   notice?: string
 }) {
@@ -56,7 +54,6 @@ export function LoginPage({
         </label>
         {error ? <p className="form-error">{error}</p> : null}
         <button className="button" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
-        <button type="button" className="button secondary" onClick={onRequestAccess}>Request access</button>
         <button type="button" className="button ghost" onClick={onForgotPassword}>Forgot password?</button>
       </form>
     </div>

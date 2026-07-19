@@ -3,7 +3,7 @@ import type { SafeUser } from '../types'
 type Role = SafeUser['role']
 
 export function getDisplayRole(role: Role): 'ADMIN' | 'EDITOR' | 'VIEWER' {
-  return role === 'BOSS_VIEWER' ? 'VIEWER' : role
+  return role
 }
 
 export function getRoleLabel(role: Role) {

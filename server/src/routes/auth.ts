@@ -146,20 +146,28 @@ export async function authRoutes(app: FastifyInstance) {
     if (!token.ok) return reply.code(400).send({ message: 'This password setup link is invalid or expired.' })
 
     const passwordHash = await hashPassword(parsed.data.newPassword)
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: token.record.userId },
-        data: {
-          passwordHash,
-          status: 'ACTIVE',
-          isActive: true,
-        },
-      }),
-      prisma.passwordToken.update({
-        where: { id: token.record.id },
+    const completed = await prisma.$transaction(async (tx) => {
+      const eligibleUser = await tx.user.findFirst({
+        where: { id: token.record.userId, status: 'APPROVED_NEEDS_PASSWORD', isActive: true },
+        select: { id: true },
+      })
+      if (!eligibleUser) return false
+      const consumed = await tx.passwordToken.updateMany({
+        where: { id: token.record.id, usedAt: null, expiresAt: { gt: new Date() } },
         data: { usedAt: new Date() },
-      }),
-    ])
+      })
+      if (consumed.count !== 1) return false
+      await tx.user.update({
+        where: { id: eligibleUser.id },
+        data: { passwordHash, status: 'ACTIVE', isActive: true, permissionVersion: { increment: 1 } },
+      })
+      await tx.passwordToken.updateMany({
+        where: { userId: eligibleUser.id, type: 'SET_PASSWORD', usedAt: null },
+        data: { usedAt: new Date() },
+      })
+      return true
+    })
+    if (!completed) return reply.code(400).send({ message: 'This password setup link is invalid or expired.' })
 
     await writeAuditLog({
       userId: token.record.userId,
@@ -203,16 +211,28 @@ export async function authRoutes(app: FastifyInstance) {
     if (!token.ok) return reply.code(400).send({ message: 'This reset link is invalid or expired.' })
 
     const passwordHash = await hashPassword(parsed.data.newPassword)
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: token.record.userId },
-        data: { passwordHash },
-      }),
-      prisma.passwordToken.update({
-        where: { id: token.record.id },
+    const completed = await prisma.$transaction(async (tx) => {
+      const activeUser = await tx.user.findFirst({
+        where: { id: token.record.userId, status: 'ACTIVE', isActive: true },
+        select: { id: true },
+      })
+      if (!activeUser) return false
+      const consumed = await tx.passwordToken.updateMany({
+        where: { id: token.record.id, usedAt: null, expiresAt: { gt: new Date() } },
         data: { usedAt: new Date() },
-      }),
-    ])
+      })
+      if (consumed.count !== 1) return false
+      await tx.user.update({
+        where: { id: activeUser.id },
+        data: { passwordHash, permissionVersion: { increment: 1 } },
+      })
+      await tx.passwordToken.updateMany({
+        where: { userId: activeUser.id, type: 'RESET_PASSWORD', usedAt: null },
+        data: { usedAt: new Date() },
+      })
+      return true
+    })
+    if (!completed) return reply.code(400).send({ message: 'This reset link is invalid or expired.' })
 
     await writeAuditLog({
       userId: token.record.userId,

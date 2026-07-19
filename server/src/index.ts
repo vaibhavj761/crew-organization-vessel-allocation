@@ -122,7 +122,11 @@ app.setNotFoundHandler(async (request, reply) => {
       const fileStats = await stat(staticPath)
       if (fileStats.isFile()) {
         const content = await readFile(staticPath)
-        return reply.type(contentTypeFor(staticPath)).send(content)
+        const immutableAsset = pathname.startsWith('/assets/')
+        return reply
+          .header('Cache-Control', immutableAsset ? 'public, max-age=31536000, immutable' : 'no-cache')
+          .type(contentTypeFor(staticPath))
+          .send(content)
       }
     } catch {
       // fall through to index.html

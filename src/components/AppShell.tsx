@@ -1,21 +1,22 @@
 import { Bot, Check, Database, LayoutDashboard, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, ShieldCheck, ShipWheel, Sparkles } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME, getPageTitle } from '../constants/app'
 import { useChart } from '../state/ChartContext'
 import type { SafeUser, ViewMode } from '../types'
 import { canExport, isReadOnly } from '../utils/permissions'
 import { AccessDeniedPage } from './AccessDeniedPage'
-import { AdminAccessRequests } from './AdminAccessRequests'
-import { AiAssistantPage } from './AiAssistantPage'
 import { AuthShell } from './AuthShell'
 import { ChartErrorBoundary } from './ChartErrorBoundary'
 import { DashboardPage } from './DashboardPage'
-import { EditorPanel } from './EditorPanel'
 import { ExportToolbar } from './ExportToolbar'
 import { OperationsAllocationView } from './OperationsAllocationView'
 import { OrgChartView } from './OrgChartView'
 import { VesselMasterTable } from './VesselMasterTable'
 import type { AiScope } from '../types'
+
+const AdminAccessRequests = lazy(() => import('./AdminAccessRequests').then((module) => ({ default: module.AdminAccessRequests })))
+const AiAssistantPage = lazy(() => import('./AiAssistantPage').then((module) => ({ default: module.AiAssistantPage })))
+const EditorPanel = lazy(() => import('./EditorPanel').then((module) => ({ default: module.EditorPanel })))
 
 export function AppShell({
   viewMode,
@@ -37,8 +38,8 @@ export function AppShell({
   onUnsavedChangesChange?: (value: boolean) => void
 }) {
   const { data, saveState, hasUnsavedChanges, errorMessage, syncNotice, saveChanges, loadState, refreshWorkspaceData } = useChart()
-  const [navigationOpen, setNavigationOpen] = useState(true)
-  const [editorOpen, setEditorOpen] = useState(true)
+  const [navigationOpen, setNavigationOpen] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(false)
   const [selectedOps, setSelectedOps] = useState('')
   const [selectedDirector, setSelectedDirector] = useState('')
   const [selectedDeputy, setSelectedDeputy] = useState('')
@@ -197,10 +198,17 @@ export function AppShell({
           </span>
         </div>
         <div className="sidebar-section-label">Workspace</div>
-        <nav className="view-switcher">
+        <nav className="view-switcher" id="primary-navigation">
           {modes.map(([m, l, Icon]) => (
-            <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => handleViewModeChange(m)} aria-current={viewMode === m ? 'page' : undefined}>
-              <Icon size={17} aria-hidden="true" />
+            <button
+              key={m}
+              className={viewMode === m ? 'active' : ''}
+              onClick={() => handleViewModeChange(m)}
+              aria-current={viewMode === m ? 'page' : undefined}
+              aria-label={l}
+              data-nav-label={l}
+            >
+              <Icon size={21} strokeWidth={2.15} aria-hidden="true" />
               <span>{l}</span>
               {m === 'access' ? <small>Admin</small> : null}
             </button>
@@ -218,7 +226,7 @@ export function AppShell({
             <strong>{getPageTitle(viewMode).replace(` · ${APP_SHORT_NAME}`, '')}</strong>
           </div>
           <div className="header-actions">
-            <button className="button secondary compact-button" type="button" onClick={() => setNavigationOpen((value) => !value)}>
+            <button className="button secondary compact-button" type="button" onClick={() => setNavigationOpen((value) => !value)} aria-expanded={navigationOpen} aria-controls="primary-navigation">
               {navigationOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
               {navigationOpen ? 'Hide menu' : 'Show menu'}
             </button>
@@ -245,13 +253,17 @@ export function AppShell({
           </div>
         </header>
         <main className="workspace">
-        {showEditorSidebar && <EditorPanel selectedDirectorId={selectedDirector} selectedOperationsManagerId={selectedOps} selectedCrewManagerId={selectedCrewManager} />}
+        {showEditorSidebar && (
+          <Suspense fallback={<aside className="editor-panel editor-panel-loading" aria-live="polite">Loading chart editor…</aside>}>
+            <EditorPanel selectedDirectorId={selectedDirector} selectedOperationsManagerId={selectedOps} selectedCrewManagerId={selectedCrewManager} />
+          </Suspense>
+        )}
         <section className={`canvas-workspace view-${viewMode} ${showEditorSidebar ? 'with-editor' : 'full-width'}`}>
           {loadState === 'loading' && <div className="page-loading-banner">Loading latest database data…</div>}
           {syncNotice && <div className="page-loading-banner notice">{syncNotice}</div>}
           {(viewMode === 'overview' || viewMode === 'operations' || viewMode === 'vessels') ? <div className="canvas-toolbar">
             {canEdit && (viewMode === 'overview' || viewMode === 'operations') && (
-              <button className="icon-button" onClick={() => setEditorOpen((v) => !v)} disabled={loadState !== 'ready'}>
+              <button className="icon-button" onClick={() => setEditorOpen((v) => !v)} disabled={loadState !== 'ready'} aria-label={editorOpen ? 'Hide chart editor' : 'Show chart editor'} title={editorOpen ? 'Hide chart editor' : 'Show chart editor'}>
                 {editorOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
               </button>
             )}
@@ -360,9 +372,15 @@ export function AppShell({
           {viewMode === 'dashboard' ? (
             <DashboardPage user={user} onNavigate={handleViewModeChange} />
           ) : viewMode === 'ai' ? (
-            <AiAssistantPage user={user} initialScope={aiInitialScope} />
+            <Suspense fallback={<div className="page-loading-banner" aria-live="polite">Loading AI Assistant…</div>}>
+              <AiAssistantPage user={user} initialScope={aiInitialScope} />
+            </Suspense>
           ) : viewMode === 'access' ? (
-            canAdmin ? <AdminAccessRequests /> : <AccessDeniedPage />
+            canAdmin ? (
+              <Suspense fallback={<div className="page-loading-banner" aria-live="polite">Loading Access Management…</div>}>
+                <AdminAccessRequests />
+              </Suspense>
+            ) : <AccessDeniedPage />
           ) : viewMode === 'vessels' ? (
             <VesselMasterTable canEdit={canEdit} />
           ) : (

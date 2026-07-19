@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { canWrite, canAdmin } from '../server/src/auth/context'
 import { allocationSchema, organizationSchema, personSchema, vesselSchema } from '../server/src/validation/schemas'
 import { toNullableDate } from '../server/src/utils/parse'
+import { adminCreateUserSchema } from '../server/src/routes/accessRequests'
 
 describe('Phase 2 backend helpers', () => {
   it('enforces write and admin roles', () => {
@@ -29,5 +30,15 @@ describe('Phase 2 backend helpers', () => {
     expect(toNullableDate('2026-07-01T00:00:00.000Z')).toBeInstanceOf(Date)
     expect(toNullableDate('')).toBeNull()
     expect(toNullableDate('not-a-date')).toBeNull()
+  })
+
+  it('validates and normalizes admin-created user details', () => {
+    const result = adminCreateUserSchema.safeParse({ name: '  New User  ', email: '  NEW.USER@EXAMPLE.COM ', role: 'EDITOR' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toEqual({ name: 'New User', email: 'new.user@example.com', role: 'EDITOR' })
+    }
+    expect(adminCreateUserSchema.safeParse({ name: '   ', email: 'valid@example.com', role: 'VIEWER' }).success).toBe(false)
+    expect(adminCreateUserSchema.safeParse({ name: 'User', email: 'invalid', role: 'VIEWER' }).success).toBe(false)
   })
 })

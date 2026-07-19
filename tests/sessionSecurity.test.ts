@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 let setAuthCookie: typeof import('../server/src/utils/session').setAuthCookie
 let getCurrentUser: typeof import('../server/src/auth/context').getCurrentUser
@@ -41,5 +43,12 @@ describe('production session security', () => {
     const policy = response.headers['content-security-policy'] || ''
     expect(policy).toContain("img-src 'self' data: blob:")
     await app.close()
+  })
+
+  it('caches only hashed frontend assets for faster repeat loads', () => {
+    const source = readFileSync(resolve('server/src/index.ts'), 'utf8')
+    expect(source).toContain("pathname.startsWith('/assets/')")
+    expect(source).toContain("'public, max-age=31536000, immutable'")
+    expect(source).toContain("'no-cache'")
   })
 })

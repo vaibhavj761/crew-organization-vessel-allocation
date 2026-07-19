@@ -3,15 +3,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OrgChartView } from '../src/components/OrgChartView'
 import type { ChartData, CrewManagerNode, DeputyManagerNode } from '../src/types'
 
-const { chartDataMock, saveHierarchyPersonMock } = vi.hoisted(() => ({
+const { chartDataMock, saveHierarchyPersonMock, createHierarchyPersonMock } = vi.hoisted(() => ({
   chartDataMock: { current: null as ChartData | null },
   saveHierarchyPersonMock: vi.fn(),
+  createHierarchyPersonMock: vi.fn(),
 }))
 
 vi.mock('../src/state/ChartContext', () => ({
   useChart: () => ({
     data: chartDataMock.current,
     saveHierarchyPerson: saveHierarchyPersonMock,
+    createHierarchyPerson: createHierarchyPersonMock,
   }),
 }))
 
@@ -97,6 +99,7 @@ describe('OrgChartView deterministic layout', () => {
   afterEach(() => {
     cleanup()
     saveHierarchyPersonMock.mockReset()
+    createHierarchyPersonMock.mockReset()
   })
 
   it('uses isolated org-chart grid classes for three crew managers', () => {
@@ -129,6 +132,31 @@ describe('OrgChartView deterministic layout', () => {
     expect(screen.getByText('No Crew Managers assigned yet')).toBeInTheDocument()
   })
 
+  it('shows assigned vessel names from the crew-manager count in the organization chart', () => {
+    chartDataMock.current = makeChartData(1)
+    chartDataMock.current.vessels = [{
+      id: 'vessel-qa',
+      name: 'MV Quality Star',
+      vesselType: 'Bulk Carrier',
+      vesselDoc: '',
+      deadweightTonnage: '',
+      ownerPool: '',
+      ownerName: '',
+      vesselManager: '',
+      crewManagerId: 'cm-1',
+      assignedAssistantId: '',
+      vesselStatus: 'IN_MANAGEMENT',
+      managementType: 'CREW_MANAGED',
+      notes: '',
+      sortOrder: 1,
+    }]
+
+    render(<OrgChartView />)
+
+    expect(screen.getByLabelText('Assigned vessels: MV Quality Star')).toBeInTheDocument()
+    expect(screen.getByRole('tooltip')).toHaveTextContent('MV Quality Star')
+  })
+
   it('lets editors save a trimmed identity update directly from the chart', async () => {
     chartDataMock.current = makeChartData(1)
     saveHierarchyPersonMock.mockResolvedValue(undefined)
@@ -148,5 +176,21 @@ describe('OrgChartView deterministic layout', () => {
     chartDataMock.current = makeChartData(1)
     render(<OrgChartView />)
     expect(screen.queryByRole('button', { name: /Edit QA Director/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add Crew Operations Manager under/ })).not.toBeInTheDocument()
+  })
+
+  it('adds the correct direct-report role from a hierarchy card', async () => {
+    chartDataMock.current = makeChartData(1)
+    createHierarchyPersonMock.mockResolvedValue(undefined)
+    render(<OrgChartView canEdit />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Deputy Manager under QA Operations Manager' }))
+    expect(screen.getByRole('dialog', { name: 'Add Deputy Manager' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/Name/), { target: { value: 'New Deputy' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Deputy Manager' }))
+
+    await waitFor(() => expect(createHierarchyPersonMock).toHaveBeenCalledTimes(1))
+    expect(createHierarchyPersonMock.mock.calls[0][0]).toEqual({ kind: 'deputyManager', operationsManagerId: 'ops-qa' })
+    expect(createHierarchyPersonMock.mock.calls[0][1]).toMatchObject({ name: 'New Deputy', designation: 'Deputy Crew Manager', workflowRole: 'DEPUTY_MANAGER' })
   })
 })

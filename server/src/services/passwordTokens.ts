@@ -12,13 +12,22 @@ function frontendUrl(path: string, token: string) {
 export async function createPasswordToken(userId: string, type: 'SET_PASSWORD' | 'RESET_PASSWORD') {
   const rawToken = generateRawToken()
   const tokenHash = hashToken(rawToken)
-  const record = await prisma.passwordToken.create({
-    data: {
-      userId,
-      tokenHash,
-      type,
-      expiresAt: new Date(Date.now() + ONE_DAY_MS),
-    },
+  const now = new Date()
+  const record = await prisma.$transaction(async (tx) => {
+    const lockedUser = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`
+    if (!lockedUser.length) throw new Error('Cannot create a password token for an unknown user.')
+    await tx.passwordToken.updateMany({
+      where: { userId, type, usedAt: null },
+      data: { usedAt: now },
+    })
+    return tx.passwordToken.create({
+      data: {
+        userId,
+        tokenHash,
+        type,
+        expiresAt: new Date(now.getTime() + ONE_DAY_MS),
+      },
+    })
   })
 
   return {

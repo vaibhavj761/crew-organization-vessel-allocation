@@ -43,7 +43,7 @@ export interface SafeUser {
   id: string
   name: string
   email: string
-  role: 'ADMIN' | 'EDITOR' | 'VIEWER' | 'BOSS_VIEWER'
+  role: 'ADMIN' | 'EDITOR' | 'VIEWER'
   status: 'PENDING_APPROVAL' | 'APPROVED_NEEDS_PASSWORD' | 'ACTIVE' | 'REJECTED' | 'DISABLED'
   isActive: boolean
   lastLoginAt: string | null

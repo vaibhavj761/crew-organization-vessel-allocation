@@ -1,21 +1,32 @@
-import { Pencil } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 import { useState } from 'react'
-import { useChart, type HierarchyPersonTarget } from '../state/ChartContext'
-import type { Person } from '../types'
+import { useChart, type HierarchyCreateTarget, type HierarchyPersonTarget } from '../state/ChartContext'
+import type { Person, WorkflowRole } from '../types'
 import { ChartHeader } from './ChartHeader'
 import { PersonCard } from './PersonCard'
 import { TeamCard } from './TeamCard'
 import { InlinePersonEditor } from './InlinePersonEditor'
+import { HierarchyPersonDialog } from './HierarchyPersonDialog'
+
+type AddPersonState = {
+  target: HierarchyCreateTarget
+  role: Exclude<WorkflowRole, 'ASSISTANT'>
+  parentName?: string
+}
 
 export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { selectedDirectorId?: string; canEdit?: boolean }) {
   const { data, saveHierarchyPerson } = useChart()
   const [editing, setEditing] = useState<{ target: HierarchyPersonTarget; person: Person; levelLabel: string } | null>(null)
+  const [adding, setAdding] = useState<AddPersonState | null>(null)
   const visibleDirectors = selectedDirectorId ? data.crewDirectors.filter((director) => director.id === selectedDirectorId) : data.crewDirectors
 
   return (
     <div className="chart-view chart-view--compact-top org-chart">
       <ChartHeader title="Organization Chart" subtitle="Reporting structure only: Crew Director, Operations Manager, Deputy Manager and Crew Manager" />
-      <div className="chart-guidance">This view shows reporting hierarchy only. Vessel names are shown in Operations & Vessel Allocation.</div>
+      <div className="chart-guidance chart-guidance--actions">
+        <span>This view shows reporting hierarchy only. Vessel names are shown in Operations & Vessel Allocation.</span>
+        {canEdit ? <button type="button" className="hierarchy-root-add" onClick={() => setAdding({ target: { kind: 'crewDirector' }, role: 'CREW_DIRECTOR' })}><Plus size={14} /> Add Crew Director</button> : null}
+      </div>
 
       {visibleDirectors.length ? (
         <div className="org-director-grid">
@@ -25,7 +36,10 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
             return (
               <section className="org-director-section" key={director.id}>
                 <div className="director-row">
-                  <PersonCard person={director.person} level="head" compact onEdit={canEdit ? () => setEditing({ target: { kind: 'crewDirector', id: director.id }, person: director.person, levelLabel: 'Crew Director' }) : undefined} />
+                  <div className="hierarchy-card-actions hierarchy-card-actions--director">
+                    <PersonCard person={director.person} level="head" compact onEdit={canEdit ? () => setEditing({ target: { kind: 'crewDirector', id: director.id }, person: director.person, levelLabel: 'Crew Director' }) : undefined} />
+                    {canEdit ? <button type="button" className="hierarchy-add-button" onClick={() => setAdding({ target: { kind: 'operationsManager', crewDirectorId: director.id }, role: 'OPERATIONS_MANAGER', parentName: director.person.name })} aria-label={`Add Crew Operations Manager under ${director.person.name}`} title="Add direct report"><Plus size={15} /></button> : null}
+                  </div>
                 </div>
 
                 {directorOps.length ? (
@@ -38,7 +52,10 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
                             <span>{op.person.designation}</span>
                           </div>
                           <b>{op.person.notes || `${op.deputyManagers.length} deputies`}</b>
-                          {canEdit ? <button type="button" className="chart-inline-edit" onClick={() => setEditing({ target: { kind: 'operationsManager', id: op.id }, person: op.person, levelLabel: 'Crew Operations Manager' })} aria-label={`Edit ${op.person.name}`}><Pencil size={12} /></button> : null}
+                          {canEdit ? <div className="hierarchy-heading-actions">
+                            <button type="button" className="chart-inline-edit" onClick={() => setEditing({ target: { kind: 'operationsManager', id: op.id }, person: op.person, levelLabel: 'Crew Operations Manager' })} aria-label={`Edit ${op.person.name}`}><Pencil size={12} /></button>
+                            <button type="button" className="hierarchy-add-button" onClick={() => setAdding({ target: { kind: 'deputyManager', operationsManagerId: op.id }, role: 'DEPUTY_MANAGER', parentName: op.person.name })} aria-label={`Add Deputy Manager under ${op.person.name}`} title="Add direct report"><Plus size={14} /></button>
+                          </div> : null}
                         </div>
 
                         <div className="org-deputy-grid">
@@ -48,7 +65,10 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
                                 <strong>{deputy.person.name}</strong>
                                 <span>{deputy.person.designation || 'Deputy Crew Manager'}</span>
                                 <b>{deputy.person.notes || `${deputy.crewManagers.length} crew managers`}</b>
-                                {canEdit ? <button type="button" className="chart-inline-edit" onClick={() => setEditing({ target: { kind: 'deputyManager', id: deputy.id, operationsManagerId: op.id }, person: deputy.person, levelLabel: 'Deputy Manager' })} aria-label={`Edit ${deputy.person.name}`}><Pencil size={12} /></button> : null}
+                                {canEdit ? <div className="hierarchy-heading-actions">
+                                  <button type="button" className="chart-inline-edit" onClick={() => setEditing({ target: { kind: 'deputyManager', id: deputy.id, operationsManagerId: op.id }, person: deputy.person, levelLabel: 'Deputy Manager' })} aria-label={`Edit ${deputy.person.name}`}><Pencil size={12} /></button>
+                                  <button type="button" className="hierarchy-add-button" onClick={() => setAdding({ target: { kind: 'crewManager', deputyManagerId: deputy.id }, role: 'CREW_MANAGER', parentName: deputy.person.name })} aria-label={`Add Crew Manager under ${deputy.person.name}`} title="Add direct report"><Plus size={14} /></button>
+                                </div> : null}
                               </div>
                               <div className="org-crew-manager-grid layout-many">
                                 {deputy.crewManagers.length ? deputy.crewManagers.map((cm) => (
@@ -58,6 +78,7 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
                                     vessels={data.vessels.filter((v) => v.crewManagerId === cm.id || v.crewManagerId === cm.person.id)}
                                     compact
                                     showVessels={false}
+                                    showVesselCountTooltip
                                     onEdit={canEdit ? () => setEditing({ target: { kind: 'crewManager', id: cm.id, deputyManagerId: deputy.id }, person: cm.person, levelLabel: 'Crew Manager' }) : undefined}
                                   />
                                 )) : (
@@ -100,6 +121,7 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
         <span>{visibleDirectors.length} crew directors · {data.operationsManagers.length} crew operations managers</span>
       </footer>
       {editing ? <InlinePersonEditor person={editing.person} levelLabel={editing.levelLabel} onClose={() => setEditing(null)} onSave={(person) => saveHierarchyPerson(editing.target, person)} /> : null}
+      {adding ? <HierarchyPersonDialog target={adding.target} role={adding.role} parentName={adding.parentName} onClose={() => setAdding(null)} /> : null}
     </div>
   )
 }

@@ -7,21 +7,20 @@ import { createPasswordToken } from '../services/passwordTokens.js'
 import { requestIp, writeAuditLog } from '../services/audit.js'
 import { toSafeUser } from '../utils/safeUser.js'
 
-const accessRequestSchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  department: z.string().optional().nullable(),
-  message: z.string().optional().nullable(),
+const approveSchema = z.object({
+  role: z.enum(['ADMIN', 'EDITOR', 'VIEWER']),
 })
 
-const approveSchema = z.object({
-  role: z.enum(['ADMIN', 'EDITOR', 'VIEWER', 'BOSS_VIEWER']),
+export const adminCreateUserSchema = z.object({
+  name: z.string().trim().min(1, 'User name is required.').max(120, 'User name is too long.'),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address.').max(254, 'Email address is too long.'),
+  role: z.enum(['ADMIN', 'EDITOR', 'VIEWER']),
 })
 
 const updateUserSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.').optional(),
   email: z.string().trim().toLowerCase().email('Enter a valid email address.').optional(),
-  role: z.enum(['ADMIN', 'EDITOR', 'VIEWER', 'BOSS_VIEWER']).optional(),
+  role: z.enum(['ADMIN', 'EDITOR', 'VIEWER']).optional(),
   status: z.enum(['ACTIVE', 'DISABLED', 'APPROVED_NEEDS_PASSWORD', 'REJECTED']).optional(),
 })
 
@@ -46,36 +45,43 @@ async function requireAdmin(request: Parameters<typeof requireCurrentUser>[0], r
 }
 
 export async function accessRequestRoutes(app: FastifyInstance) {
-  app.post('/api/access-requests', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const parsed = accessRequestSchema.safeParse(request.body)
-    if (!parsed.success) return badRequest(reply, 'Invalid access request payload', parsed.error.flatten())
+  app.post('/api/admin/users', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const admin = await requireAdmin(request, reply)
+    if (!admin) return
 
-    const email = parsed.data.email.toLowerCase().trim()
-    const existing = await prisma.user.findUnique({ where: { email } })
-    if (!existing) {
-      const user = await prisma.user.create({
-        data: {
-          name: parsed.data.name,
-          email,
-          department: parsed.data.department || null,
-          accessRequestMessage: parsed.data.message || null,
-          status: 'PENDING_APPROVAL',
-          isActive: true,
-        },
-      })
-      await writeAuditLog({
-        userId: user.id,
-        action: 'access.requested',
-        entityType: 'User',
-        entityId: user.id,
-        afterJson: { email: user.email, department: user.department, status: user.status },
-        ipAddress: requestIp(request),
-      })
-    }
+    const parsed = adminCreateUserSchema.safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, 'Invalid user details', parsed.error.flatten())
 
-    return reply.send({
+    const existing = await prisma.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } })
+    if (existing) return reply.code(409).send({ message: 'That email address is already in use.' })
+
+    const created = await prisma.user.create({
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        role: parsed.data.role,
+        status: 'APPROVED_NEEDS_PASSWORD',
+        isActive: true,
+        approvedByUserId: admin.id,
+        approvedAt: new Date(),
+      },
+    })
+    const { link } = await createPasswordToken(created.id, 'SET_PASSWORD')
+
+    await writeAuditLog({
+      userId: admin.id,
+      action: 'user.created',
+      entityType: 'User',
+      entityId: created.id,
+      afterJson: { name: created.name, email: created.email, role: created.role, status: created.status },
+      ipAddress: requestIp(request),
+    })
+
+    return reply.code(201).send({
       success: true,
-      message: 'Your access request has been submitted. Please wait for admin approval.',
+      user: toSafeUser(created),
+      setupLink: link,
+      message: 'User created. Share this one-time setup link securely.',
     })
   })
 
@@ -129,7 +135,6 @@ export async function accessRequestRoutes(app: FastifyInstance) {
         rejectedAt: null,
       },
     })
-
     const { link } = await createPasswordToken(updated.id, 'SET_PASSWORD')
     await writeAuditLog({
       userId: admin.id,
@@ -155,13 +160,20 @@ export async function accessRequestRoutes(app: FastifyInstance) {
     const user = await prisma.user.findUnique({ where: { id: params.id } })
     if (!user) return notFound(reply, 'Access request not found')
 
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        status: 'REJECTED',
-        permissionVersion: { increment: 1 },
-        rejectedAt: new Date(),
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.user.update({
+        where: { id: user.id },
+        data: {
+          status: 'REJECTED',
+          permissionVersion: { increment: 1 },
+          rejectedAt: new Date(),
+        },
+      })
+      await tx.passwordToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      })
+      return result
     })
 
     await writeAuditLog({
@@ -231,18 +243,24 @@ export async function accessRequestRoutes(app: FastifyInstance) {
       return badRequest(reply, 'The last remaining admin cannot be disabled or downgraded.')
     }
 
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        name: nextName,
-        email: nextEmail,
-        role: nextRole,
-        status: nextStatus,
-        isActive: nextIsActive,
-        permissionVersion: permissionChanged ? { increment: 1 } : undefined,
-        approvedAt: nextStatus === 'ACTIVE' || nextStatus === 'APPROVED_NEEDS_PASSWORD' ? user.approvedAt ?? new Date() : user.approvedAt,
-        rejectedAt: nextStatus === 'REJECTED' ? new Date() : null,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.user.update({
+        where: { id: user.id },
+        data: {
+          name: nextName,
+          email: nextEmail,
+          role: nextRole,
+          status: nextStatus,
+          isActive: nextIsActive,
+          permissionVersion: permissionChanged ? { increment: 1 } : undefined,
+          approvedAt: nextStatus === 'ACTIVE' || nextStatus === 'APPROVED_NEEDS_PASSWORD' ? user.approvedAt ?? new Date() : user.approvedAt,
+          rejectedAt: nextStatus === 'REJECTED' ? new Date() : null,
+        },
+      })
+      if (nextStatus === 'DISABLED' || nextStatus === 'REJECTED') {
+        await tx.passwordToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } })
+      }
+      return result
     })
 
     await writeAuditLog({
