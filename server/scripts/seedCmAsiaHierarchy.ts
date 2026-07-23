@@ -359,6 +359,58 @@ async function main() {
 
   let vesselSortOrder = 1
   for (const [crewManagerId, vessels] of Object.entries(vesselAssignments)) {
+    const crewManager = await prisma.crewManager.findUniqueOrThrow({
+      where: { id: crewManagerId },
+      include: { deputyManager: { include: { operationsManager: true } } },
+    })
+    const operationsManager = crewManager.deputyManager.operationsManager
+    const operationsLine = await prisma.operationsManagerReportingLine.upsert({
+      where: {
+        operationsManagerId_crewDirectorId: {
+          operationsManagerId: operationsManager.id,
+          crewDirectorId: operationsManager.crewDirectorId,
+        },
+      },
+      create: {
+        organizationId: organization.id,
+        operationsManagerId: operationsManager.id,
+        crewDirectorId: operationsManager.crewDirectorId,
+        isPrimary: true,
+      },
+      update: {},
+    })
+    const deputyLine = await prisma.deputyManagerReportingLine.upsert({
+      where: {
+        deputyManagerId_operationsManagerReportingLineId: {
+          deputyManagerId: crewManager.deputyManager.id,
+          operationsManagerReportingLineId: operationsLine.id,
+        },
+      },
+      create: {
+        organizationId: organization.id,
+        deputyManagerId: crewManager.deputyManager.id,
+        operationsManagerId: operationsManager.id,
+        operationsManagerReportingLineId: operationsLine.id,
+        isPrimary: true,
+      },
+      update: {},
+    })
+    const crewLine = await prisma.crewManagerReportingLine.upsert({
+      where: {
+        crewManagerId_deputyManagerReportingLineId: {
+          crewManagerId,
+          deputyManagerReportingLineId: deputyLine.id,
+        },
+      },
+      create: {
+        organizationId: organization.id,
+        crewManagerId,
+        deputyManagerId: crewManager.deputyManager.id,
+        deputyManagerReportingLineId: deputyLine.id,
+        isPrimary: true,
+      },
+      update: {},
+    })
     for (const [vesselIndex, vesselName] of vessels.entries()) {
       const vessel = await prisma.vessel.create({
         data: {
@@ -376,6 +428,7 @@ async function main() {
         data: {
           vesselId: vessel.id,
           crewManagerId,
+          crewManagerReportingLineId: crewLine.id,
         },
       })
       vesselSortOrder += 1

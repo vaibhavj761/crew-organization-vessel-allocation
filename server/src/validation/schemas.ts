@@ -33,6 +33,7 @@ export const vesselSchema = z.object({
   name: trimmedRequiredString('Vessel name is required.'),
   vesselType: trimmedRequiredString('Vessel type is required.'),
   crewManagerId: trimmedRequiredString('Assignment is required.'),
+  crewManagerReportingLineId: trimmedOptionalString,
   assignedAssistantId: trimmedOptionalString,
   vesselDoc: trimmedOptionalString,
   deadweightTonnage: trimmedOptionalString,
@@ -50,5 +51,6 @@ export const vesselSchema = z.object({
 
 export const allocationSchema = z.object({
   crewManagerId: trimmedRequiredString('Assignment is required.'),
+  crewManagerReportingLineId: trimmedOptionalString,
   assignedAssistantId: trimmedOptionalString,
 })

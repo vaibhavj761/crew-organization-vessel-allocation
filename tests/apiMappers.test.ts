@@ -60,6 +60,58 @@ describe('api mappers', () => {
     expect(mapped.operationsManagers[0].deputyManagers[0].crewManagers[0].person.id).toBe('person-cm-7')
   })
 
+  it('preserves each shared manager placement and keeps its descendants placement-specific', () => {
+    const primaryPlacement = {
+      id: 'ops-shared',
+      reportingLineId: 'ops-line-primary',
+      isPrimaryReportingLine: true,
+      crewDirectorId: 'director-one',
+      crewDirectorIds: ['director-one', 'director-two'],
+      person: { id: 'person-shared', name: 'Shared Ops', designation: 'Crew Operations Manager' },
+      deputyManagers: [{
+        id: 'deputy-shared',
+        reportingLineId: 'deputy-line-primary',
+        isPrimaryReportingLine: true,
+        operationsManagerId: 'ops-shared',
+        person: { id: 'person-deputy', name: 'Michael', designation: 'Deputy Manager' },
+        crewManagers: [{
+          id: 'crew-original',
+          reportingLineId: 'crew-line-primary',
+          isPrimaryReportingLine: true,
+          deputyManagerId: 'deputy-shared',
+          person: { id: 'person-crew', name: 'Original Crew Manager', designation: 'Crew Manager' },
+          vessels: [{ id: 'vessel-only-on-primary' }],
+        }],
+      }],
+    }
+    const copiedPlacement = {
+      ...primaryPlacement,
+      reportingLineId: 'ops-line-secondary',
+      isPrimaryReportingLine: false,
+      crewDirectorId: 'director-two',
+      deputyManagers: [{
+        ...primaryPlacement.deputyManagers[0],
+        reportingLineId: 'deputy-line-secondary',
+        isPrimaryReportingLine: false,
+        crewManagers: [],
+      }],
+    }
+    const mapped = mapHierarchyResponseToChartState({
+      crewDirectors: [
+        { id: 'director-one', person: { name: 'Director One' }, operationsManagers: [primaryPlacement] },
+        { id: 'director-two', person: { name: 'Director Two' }, operationsManagers: [copiedPlacement] },
+      ],
+    })
+
+    expect(mapped.operationsManagers).toHaveLength(2)
+    expect(mapped.operationsManagers[0].reportingLineId).toBe('ops-line-primary')
+    expect(mapped.operationsManagers[1].reportingLineId).toBe('ops-line-secondary')
+    expect(mapped.operationsManagers[0].crewDirectorIds).toEqual(['director-one', 'director-two'])
+    expect(mapped.operationsManagers[0].deputyManagers[0].crewManagers).toHaveLength(1)
+    expect(mapped.operationsManagers[1].deputyManagers[0].crewManagers).toHaveLength(0)
+    expect(mapped.operationsManagers[0].deputyManagers[0].crewManagers[0].vesselIds).toEqual(['vessel-only-on-primary'])
+  })
+
   it('maps vessel allocations and clears legacy assistant metadata', () => {
     const vessel = mapVesselResponseToVessel({
       id: 'vessel-1',
@@ -68,11 +120,17 @@ describe('api mappers', () => {
       managementType: 'FULL_MANAGED',
       currentAllocation: {
         crewManagerId: 'crew-node-1',
+        crewManagerReportingLineId: 'crew-line-1',
+        deputyManagerId: 'deputy-node-1',
+        operationsManagerId: 'operations-node-1',
         assignedAssistantId: 'assistant-node-1',
       },
     }, 1)
 
     expect(vessel.crewManagerId).toBe('crew-node-1')
+    expect(vessel.crewManagerReportingLineId).toBe('crew-line-1')
+    expect(vessel.deputyManagerId).toBe('deputy-node-1')
+    expect(vessel.operationsManagerId).toBe('operations-node-1')
     expect(vessel.assignedAssistantId).toBe('')
   })
 
@@ -88,5 +146,6 @@ describe('api mappers', () => {
     expect(payload.name).toBe('MV Northern Star')
     expect(payload.vesselStatus).toBe('IN_MANAGEMENT')
     expect(payload.crewManagerId).toBe(sampleData.vessels[0].crewManagerId)
+    expect(payload.crewManagerReportingLineId).toBe(sampleData.vessels[0].crewManagerReportingLineId)
   })
 })

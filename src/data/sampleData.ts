@@ -1,11 +1,22 @@
 import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, OperationsManagerNode, Person, Vessel } from '../types'
 
 const person = <R extends Person['workflowRole']>(id: string, name: string, designation: string, workflowRole: R) => ({ id, name, designation, workflowRole, email: '', phone: '', notes: '' } as Person & { workflowRole: R })
-const manager = (id: string, name: string, designation: string, sortOrder: number): CrewManagerNode => ({ id: `team-${id}`, sortOrder, person: person(id, name, designation, 'CREW_MANAGER'), vesselIds: [] })
-const deputy = (id: string, operationsManagerId: string, name: string, designation: string, sortOrder: number, crewManagers: CrewManagerNode[]): DeputyManagerNode => ({ id: `deputy-node-${id}`, operationsManagerId, sortOrder, person: person(id, name, designation, 'DEPUTY_MANAGER'), crewManagers })
+const manager = (id: string, name: string, designation: string, sortOrder: number): CrewManagerNode => ({ id: `team-${id}`, reportingLineId: `crew-line-${id}`, isPrimaryReportingLine: true, sortOrder, person: person(id, name, designation, 'CREW_MANAGER'), vesselIds: [] })
+const deputy = (id: string, operationsManagerId: string, name: string, designation: string, sortOrder: number, crewManagers: CrewManagerNode[]): DeputyManagerNode => ({ id: `deputy-node-${id}`, reportingLineId: `deputy-line-${id}`, isPrimaryReportingLine: true, operationsManagerId, sortOrder, person: person(id, name, designation, 'DEPUTY_MANAGER'), crewManagers })
 const director = (id: string, name: string, designation: string, sortOrder: number): CrewDirectorNode => ({ id: `director-node-${id}`, sortOrder, person: person(id, name, designation, 'CREW_DIRECTOR') })
-const ops = (id: string, crewDirectorId: string, name: string, designation: string, sortOrder: number, deputyManagers: DeputyManagerNode[]): OperationsManagerNode => ({ id: `ops-node-${id}`, crewDirectorId, sortOrder, person: person(id, name, designation, 'OPERATIONS_MANAGER'), deputyManagers })
-const vessel = (id: string, name: string, type: string, crewManagerId: string, sortOrder: number): Vessel => ({ id, name, vesselType: type, vesselDoc: 'Northstar DOC', deadweightTonnage: '', ownerPool: 'Managed Pool', ownerName: '', vesselManager: 'Northstar Ship Management', crewManagerId, assignedAssistantId: '', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', notes: '', sortOrder })
+const ops = (id: string, crewDirectorId: string, name: string, designation: string, sortOrder: number, deputyManagers: DeputyManagerNode[]): OperationsManagerNode => ({ id: `ops-node-${id}`, reportingLineId: `operations-line-${id}`, isPrimaryReportingLine: true, crewDirectorId, sortOrder, person: person(id, name, designation, 'OPERATIONS_MANAGER'), deputyManagers })
+const vessel = (id: string, name: string, type: string, crewManagerId: string, sortOrder: number): Vessel => {
+  const managerNumber = crewManagerId.endsWith('3') ? '3' : crewManagerId.endsWith('2') ? '2' : '1'
+  const secondBranch = managerNumber === '3'
+  return {
+    id, name, vesselType: type, vesselDoc: 'Northstar DOC', deadweightTonnage: '', ownerPool: 'Managed Pool', ownerName: '', vesselManager: 'Northstar Ship Management',
+    crewManagerId,
+    crewManagerReportingLineId: `crew-line-manager-${managerNumber}`,
+    deputyManagerId: `deputy-node-deputy-${secondBranch ? '2' : '1'}`,
+    operationsManagerId: `ops-node-ops-${secondBranch ? '2' : '1'}`,
+    assignedAssistantId: '', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', notes: '', sortOrder,
+  }
+}
 
 const leena = manager('manager-1', 'Leena Thomas', 'Crew Manager', 1)
 const vikram = manager('manager-2', 'Vikram Menon', 'Crew Manager', 2)

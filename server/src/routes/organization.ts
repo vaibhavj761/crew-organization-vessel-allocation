@@ -15,6 +15,21 @@ async function getPrimaryOrganization() {
   return prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } })
 }
 
+async function resolveCrewManagerReportingLine(
+  organizationId: string,
+  crewManagerId: string,
+  reportingLineId?: string | null,
+) {
+  const line = reportingLineId
+    ? await prisma.crewManagerReportingLine.findUnique({ where: { id: reportingLineId } })
+    : await prisma.crewManagerReportingLine.findFirst({
+        where: { organizationId, crewManagerId, isPrimary: true },
+        orderBy: { createdAt: 'asc' },
+      })
+  if (!line || line.organizationId !== organizationId || line.crewManagerId !== crewManagerId) return null
+  return line
+}
+
 async function ensureAuthorizedWrite(request: Parameters<typeof requireCurrentUser>[0], reply: Parameters<typeof requireCurrentUser>[1]) {
   const user = await requireCurrentUser(request, reply)
   if (!user) return null
@@ -34,6 +49,14 @@ async function ensureAdmin(request: Parameters<typeof requireCurrentUser>[0], re
   }
   return user
 }
+
+const hierarchyPlacementSchema = z.object({
+  entityType: z.enum(['OPERATIONS_MANAGER', 'DEPUTY_MANAGER', 'CREW_MANAGER']),
+  entityId: z.string().trim().min(1),
+  parentId: z.string().trim().min(1),
+  parentPlacementId: z.string().trim().min(1).optional(),
+  action: z.enum(['MOVE', 'COPY']),
+})
 
 export async function organizationRoutes(app: FastifyInstance) {
   app.get('/api/organization', async (request, reply) => {
@@ -95,6 +118,213 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!organization) return notFound(reply, 'Organization not configured')
     const hierarchy = await getOrganizationHierarchy(organization.id)
     return reply.send(hierarchy)
+  })
+
+  app.post('/api/hierarchy/placements', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const parsed = hierarchyPlacementSchema.safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, 'Invalid hierarchy placement', parsed.error.flatten())
+
+    const { entityType, entityId, parentId, parentPlacementId, action } = parsed.data
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+
+    const result = await prisma.$transaction(async (tx) => {
+      if (entityType === 'OPERATIONS_MANAGER') {
+        const [entity, parent, existingLine] = await Promise.all([
+          tx.operationsManager.findUnique({ where: { id: entityId }, include: { person: true, reportingLines: true } }),
+          tx.crewDirector.findUnique({ where: { id: parentId }, include: { person: true } }),
+          tx.operationsManagerReportingLine.findUnique({ where: { operationsManagerId_crewDirectorId: { operationsManagerId: entityId, crewDirectorId: parentId } } }),
+        ])
+        if (!entity || entity.organizationId !== organization.id) throw new Error('ENTITY_NOT_FOUND')
+        if (!parent || parent.organizationId !== organization.id) throw new Error('PARENT_NOT_FOUND')
+        if (action === 'COPY' && existingLine) throw new Error('ALREADY_REPORTS')
+
+        if (action === 'COPY') {
+          await tx.operationsManagerReportingLine.create({
+            data: { organizationId: organization.id, operationsManagerId: entity.id, crewDirectorId: parent.id, isPrimary: false },
+          })
+        } else {
+          const primaryLine = entity.reportingLines.find((line) => line.isPrimary) ?? entity.reportingLines[0]
+          await tx.operationsManager.update({ where: { id: entity.id }, data: { crewDirectorId: parent.id } })
+          if (existingLine && existingLine.id !== primaryLine?.id) {
+            await tx.operationsManagerReportingLine.delete({ where: { id: existingLine.id } })
+          }
+          if (primaryLine) {
+            await tx.operationsManagerReportingLine.update({
+              where: { id: primaryLine.id },
+              data: { crewDirectorId: parent.id, isPrimary: true },
+            })
+            await tx.operationsManagerReportingLine.deleteMany({
+              where: { operationsManagerId: entity.id, id: { not: primaryLine.id } },
+            })
+          } else {
+            await tx.operationsManagerReportingLine.create({
+              data: { organizationId: organization.id, operationsManagerId: entity.id, crewDirectorId: parent.id, isPrimary: true },
+            })
+          }
+        }
+        return { entityName: entity.person.name, parentName: parent.person.name }
+      }
+
+      if (entityType === 'DEPUTY_MANAGER') {
+        const [entity, parent] = await Promise.all([
+          tx.deputyManager.findUnique({ where: { id: entityId }, include: { person: true, reportingLines: true } }),
+          tx.operationsManager.findUnique({ where: { id: parentId }, include: { person: true } }),
+        ])
+        if (!entity || entity.organizationId !== organization.id) throw new Error('ENTITY_NOT_FOUND')
+        if (!parent || parent.organizationId !== organization.id) throw new Error('PARENT_NOT_FOUND')
+        const parentPlacement = parentPlacementId
+          ? await tx.operationsManagerReportingLine.findUnique({ where: { id: parentPlacementId } })
+          : await tx.operationsManagerReportingLine.findFirst({ where: { operationsManagerId: parent.id, isPrimary: true } })
+        if (!parentPlacement || parentPlacement.operationsManagerId !== parent.id || parentPlacement.organizationId !== organization.id) {
+          throw new Error('PARENT_PLACEMENT_NOT_FOUND')
+        }
+        const existingLine = await tx.deputyManagerReportingLine.findUnique({
+          where: {
+            deputyManagerId_operationsManagerReportingLineId: {
+              deputyManagerId: entity.id,
+              operationsManagerReportingLineId: parentPlacement.id,
+            },
+          },
+        })
+        if (action === 'COPY' && existingLine) throw new Error('ALREADY_REPORTS')
+
+        if (action === 'COPY') {
+          await tx.deputyManagerReportingLine.create({
+            data: {
+              organizationId: organization.id,
+              deputyManagerId: entity.id,
+              operationsManagerId: parent.id,
+              operationsManagerReportingLineId: parentPlacement.id,
+              isPrimary: false,
+            },
+          })
+        } else {
+          const primaryLine = entity.reportingLines.find((line) => line.isPrimary) ?? entity.reportingLines[0]
+          await tx.deputyManager.update({ where: { id: entity.id }, data: { operationsManagerId: parent.id } })
+          if (existingLine && existingLine.id !== primaryLine?.id) {
+            await tx.deputyManagerReportingLine.delete({ where: { id: existingLine.id } })
+          }
+          if (primaryLine) {
+            await tx.deputyManagerReportingLine.update({
+              where: { id: primaryLine.id },
+              data: {
+                operationsManagerId: parent.id,
+                operationsManagerReportingLineId: parentPlacement.id,
+                isPrimary: true,
+              },
+            })
+            await tx.deputyManagerReportingLine.deleteMany({
+              where: { deputyManagerId: entity.id, id: { not: primaryLine.id } },
+            })
+          } else {
+            await tx.deputyManagerReportingLine.create({
+              data: {
+                organizationId: organization.id,
+                deputyManagerId: entity.id,
+                operationsManagerId: parent.id,
+                operationsManagerReportingLineId: parentPlacement.id,
+                isPrimary: true,
+              },
+            })
+          }
+        }
+        return { entityName: entity.person.name, parentName: parent.person.name }
+      }
+
+      const [entity, parent] = await Promise.all([
+        tx.crewManager.findUnique({ where: { id: entityId }, include: { person: true, reportingLines: true } }),
+        tx.deputyManager.findUnique({ where: { id: parentId }, include: { person: true } }),
+      ])
+      if (!entity || entity.organizationId !== organization.id) throw new Error('ENTITY_NOT_FOUND')
+      if (!parent || parent.organizationId !== organization.id) throw new Error('PARENT_NOT_FOUND')
+      const parentPlacement = parentPlacementId
+        ? await tx.deputyManagerReportingLine.findUnique({ where: { id: parentPlacementId } })
+        : await tx.deputyManagerReportingLine.findFirst({ where: { deputyManagerId: parent.id, isPrimary: true } })
+      if (!parentPlacement || parentPlacement.deputyManagerId !== parent.id || parentPlacement.organizationId !== organization.id) {
+        throw new Error('PARENT_PLACEMENT_NOT_FOUND')
+      }
+      const existingLine = await tx.crewManagerReportingLine.findUnique({
+        where: {
+          crewManagerId_deputyManagerReportingLineId: {
+            crewManagerId: entity.id,
+            deputyManagerReportingLineId: parentPlacement.id,
+          },
+        },
+      })
+      if (action === 'COPY' && existingLine) throw new Error('ALREADY_REPORTS')
+
+      if (action === 'COPY') {
+        await tx.crewManagerReportingLine.create({
+          data: {
+            organizationId: organization.id,
+            crewManagerId: entity.id,
+            deputyManagerId: parent.id,
+            deputyManagerReportingLineId: parentPlacement.id,
+            isPrimary: false,
+          },
+        })
+      } else {
+        const primaryLine = entity.reportingLines.find((line) => line.isPrimary) ?? entity.reportingLines[0]
+        await tx.crewManager.update({ where: { id: entity.id }, data: { deputyManagerId: parent.id } })
+        if (primaryLine) {
+          // MOVE means this Crew Manager and all vessel allocations move together.
+          // Point every allocation at the retained placement before removing any
+          // secondary placement so a vessel is never duplicated or unassigned.
+          await tx.vesselAllocation.updateMany({
+            where: { crewManagerId: entity.id },
+            data: { crewManagerReportingLineId: primaryLine.id },
+          })
+        }
+        if (existingLine && existingLine.id !== primaryLine?.id) {
+          await tx.crewManagerReportingLine.delete({ where: { id: existingLine.id } })
+        }
+        if (primaryLine) {
+          await tx.crewManagerReportingLine.update({
+            where: { id: primaryLine.id },
+            data: {
+              deputyManagerId: parent.id,
+              deputyManagerReportingLineId: parentPlacement.id,
+              isPrimary: true,
+            },
+          })
+          await tx.crewManagerReportingLine.deleteMany({
+            where: { crewManagerId: entity.id, id: { not: primaryLine.id } },
+          })
+        } else {
+          await tx.crewManagerReportingLine.create({
+            data: {
+              organizationId: organization.id,
+              crewManagerId: entity.id,
+              deputyManagerId: parent.id,
+              deputyManagerReportingLineId: parentPlacement.id,
+              isPrimary: true,
+            },
+          })
+        }
+      }
+      return { entityName: entity.person.name, parentName: parent.person.name }
+    }).catch((error: unknown) => {
+      const code = error instanceof Error ? error.message : ''
+      if (code === 'ENTITY_NOT_FOUND') return { error: 'The employee being moved could not be found.' }
+      if (code === 'PARENT_NOT_FOUND') return { error: 'The destination employee could not be found.' }
+      if (code === 'PARENT_PLACEMENT_NOT_FOUND') return { error: 'The selected destination placement is no longer available. Refresh and try again.' }
+      if (code === 'ALREADY_REPORTS') return { error: 'This reporting relationship already exists.' }
+      throw error
+    })
+
+    if ('error' in result) return badRequest(reply, result.error)
+    await writeAuditLog({
+      userId: user.id,
+      action: action === 'COPY' ? 'hierarchy.reporting.copy' : 'hierarchy.reporting.move',
+      entityType,
+      entityId,
+      afterJson: { parentId, parentPlacementId, ...result },
+      ipAddress: requestIp(request),
+    })
+    return reply.send({ success: true, action, ...result })
   })
 
   app.post('/api/crew-directors', async (request, reply) => {
@@ -171,10 +401,14 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!parentDirector) return notFound(reply, 'Crew director not found')
     const createdManager = await prisma.$transaction(async (tx) => {
       const person = await tx.person.create({ data: { organizationId: parsed.data.organizationId, name: parsed.data.name, designation: parsed.data.designation, workflowRole: parsed.data.workflowRole, email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
-      return tx.operationsManager.create({
+      const manager = await tx.operationsManager.create({
         data: { organizationId: org.id, crewDirectorId: parentDirector.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 },
         include: { person: true },
       })
+      await tx.operationsManagerReportingLine.create({
+        data: { organizationId: org.id, operationsManagerId: manager.id, crewDirectorId: parentDirector.id, isPrimary: true },
+      })
+      return manager
     })
     await writeAuditLog({ userId: user.id, action: 'operationsManager.create', entityType: 'OperationsManager', entityId: createdManager.id, afterJson: createdManager, ipAddress: requestIp(request) })
     return created(reply, createdManager)
@@ -186,11 +420,22 @@ export async function organizationRoutes(app: FastifyInstance) {
     const parsed = personSchema.partial().extend({ crewDirectorId: z.string().min(1).optional() }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid operations manager payload', parsed.error.flatten())
     const params = request.params as { id: string }
-    const existing = await prisma.operationsManager.findUnique({ where: { id: params.id }, include: { person: true, deputyManagers: true } })
+    const existing = await prisma.operationsManager.findUnique({ where: { id: params.id }, include: { person: true, deputyManagers: true, reportingLines: true } })
     if (!existing) return notFound(reply, 'Operations manager not found')
     const updated = await prisma.$transaction(async (tx) => {
       if (parsed.data.crewDirectorId && parsed.data.crewDirectorId !== existing.crewDirectorId) {
         await tx.operationsManager.update({ where: { id: existing.id }, data: { crewDirectorId: parsed.data.crewDirectorId } })
+        const primaryLine = existing.reportingLines.find((line) => line.isPrimary) ?? existing.reportingLines[0]
+        if (primaryLine) {
+          await tx.operationsManagerReportingLine.update({
+            where: { id: primaryLine.id },
+            data: { crewDirectorId: parsed.data.crewDirectorId, isPrimary: true },
+          })
+        } else {
+          await tx.operationsManagerReportingLine.create({
+            data: { organizationId: existing.organizationId, operationsManagerId: existing.id, crewDirectorId: parsed.data.crewDirectorId, isPrimary: true },
+          })
+        }
       }
       if (parsed.data.name || parsed.data.designation || parsed.data.email || parsed.data.phone || parsed.data.notes) {
         await tx.person.update({
@@ -229,7 +474,10 @@ export async function organizationRoutes(app: FastifyInstance) {
   app.post('/api/deputy-managers', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
-    const parsed = personSchema.extend({ operationsManagerId: z.string().min(1) }).safeParse(request.body)
+    const parsed = personSchema.extend({
+      operationsManagerId: z.string().min(1),
+      operationsManagerReportingLineId: z.string().min(1).optional(),
+    }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid deputy manager payload', parsed.error.flatten())
     if (parsed.data.workflowRole !== 'DEPUTY_MANAGER') return badRequest(reply, 'workflowRole must be DEPUTY_MANAGER')
     const org = await getPrimaryOrganization()
@@ -238,7 +486,23 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!parent) return notFound(reply, 'Operations manager not found')
     const createdDeputy = await prisma.$transaction(async (tx) => {
       const person = await tx.person.create({ data: { organizationId: org.id, name: parsed.data.name, designation: parsed.data.designation, workflowRole: 'DEPUTY_MANAGER', email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
-      return tx.deputyManager.create({ data: { organizationId: org.id, operationsManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
+      const deputy = await tx.deputyManager.create({ data: { organizationId: org.id, operationsManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
+      const parentPlacement = parsed.data.operationsManagerReportingLineId
+        ? await tx.operationsManagerReportingLine.findUnique({ where: { id: parsed.data.operationsManagerReportingLineId } })
+        : await tx.operationsManagerReportingLine.findFirst({ where: { operationsManagerId: parent.id, isPrimary: true } })
+      if (!parentPlacement || parentPlacement.operationsManagerId !== parent.id || parentPlacement.organizationId !== org.id) {
+        throw new Error('Selected Operations Manager placement is missing')
+      }
+      await tx.deputyManagerReportingLine.create({
+        data: {
+          organizationId: org.id,
+          deputyManagerId: deputy.id,
+          operationsManagerId: parent.id,
+          operationsManagerReportingLineId: parentPlacement.id,
+          isPrimary: true,
+        },
+      })
+      return deputy
     })
     await writeAuditLog({ userId: user.id, action: 'deputyManager.create', entityType: 'DeputyManager', entityId: createdDeputy.id, afterJson: createdDeputy, ipAddress: requestIp(request) })
     return created(reply, createdDeputy)
@@ -250,11 +514,36 @@ export async function organizationRoutes(app: FastifyInstance) {
     const parsed = personSchema.partial().extend({ operationsManagerId: z.string().min(1).optional() }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid deputy manager payload', parsed.error.flatten())
     const params = request.params as { id: string }
-    const existing = await prisma.deputyManager.findUnique({ where: { id: params.id }, include: { person: true, crewManagers: true } })
+    const existing = await prisma.deputyManager.findUnique({ where: { id: params.id }, include: { person: true, crewManagers: true, reportingLines: true } })
     if (!existing) return notFound(reply, 'Deputy manager not found')
     const updated = await prisma.$transaction(async (tx) => {
       if (parsed.data.operationsManagerId && parsed.data.operationsManagerId !== existing.operationsManagerId) {
+        const parentPlacement = await tx.operationsManagerReportingLine.findFirst({
+          where: { operationsManagerId: parsed.data.operationsManagerId, isPrimary: true },
+        })
+        if (!parentPlacement) throw new Error('Primary Operations Manager placement is missing')
         await tx.deputyManager.update({ where: { id: existing.id }, data: { operationsManagerId: parsed.data.operationsManagerId } })
+        const primaryLine = existing.reportingLines.find((line) => line.isPrimary) ?? existing.reportingLines[0]
+        if (primaryLine) {
+          await tx.deputyManagerReportingLine.update({
+            where: { id: primaryLine.id },
+            data: {
+              operationsManagerId: parsed.data.operationsManagerId,
+              operationsManagerReportingLineId: parentPlacement.id,
+              isPrimary: true,
+            },
+          })
+        } else {
+          await tx.deputyManagerReportingLine.create({
+            data: {
+              organizationId: existing.organizationId,
+              deputyManagerId: existing.id,
+              operationsManagerId: parsed.data.operationsManagerId,
+              operationsManagerReportingLineId: parentPlacement.id,
+              isPrimary: true,
+            },
+          })
+        }
       }
       if (parsed.data.name || parsed.data.designation || parsed.data.email || parsed.data.phone || parsed.data.notes) {
         await tx.person.update({
@@ -293,7 +582,10 @@ export async function organizationRoutes(app: FastifyInstance) {
   app.post('/api/crew-managers', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
-    const parsed = personSchema.extend({ deputyManagerId: z.string().min(1) }).safeParse(request.body)
+    const parsed = personSchema.extend({
+      deputyManagerId: z.string().min(1),
+      deputyManagerReportingLineId: z.string().min(1).optional(),
+    }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid crew manager payload', parsed.error.flatten())
     if (parsed.data.workflowRole !== 'CREW_MANAGER') return badRequest(reply, 'workflowRole must be CREW_MANAGER')
     const org = await getPrimaryOrganization()
@@ -302,7 +594,23 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!parent) return notFound(reply, 'Deputy manager not found')
     const createdManager = await prisma.$transaction(async (tx) => {
       const person = await tx.person.create({ data: { organizationId: org.id, name: parsed.data.name, designation: parsed.data.designation, workflowRole: 'CREW_MANAGER', email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
-      return tx.crewManager.create({ data: { organizationId: org.id, deputyManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
+      const manager = await tx.crewManager.create({ data: { organizationId: org.id, deputyManagerId: parent.id, personId: person.id, sortOrder: parsed.data.sortOrder ?? 0 }, include: { person: true } })
+      const parentPlacement = parsed.data.deputyManagerReportingLineId
+        ? await tx.deputyManagerReportingLine.findUnique({ where: { id: parsed.data.deputyManagerReportingLineId } })
+        : await tx.deputyManagerReportingLine.findFirst({ where: { deputyManagerId: parent.id, isPrimary: true } })
+      if (!parentPlacement || parentPlacement.deputyManagerId !== parent.id || parentPlacement.organizationId !== org.id) {
+        throw new Error('Selected Deputy Manager placement is missing')
+      }
+      await tx.crewManagerReportingLine.create({
+        data: {
+          organizationId: org.id,
+          crewManagerId: manager.id,
+          deputyManagerId: parent.id,
+          deputyManagerReportingLineId: parentPlacement.id,
+          isPrimary: true,
+        },
+      })
+      return manager
     })
     await writeAuditLog({ userId: user.id, action: 'crewManager.create', entityType: 'CrewManager', entityId: createdManager.id, afterJson: createdManager, ipAddress: requestIp(request) })
     return created(reply, createdManager)
@@ -314,11 +622,36 @@ export async function organizationRoutes(app: FastifyInstance) {
     const parsed = personSchema.partial().extend({ deputyManagerId: z.string().min(1).optional() }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid crew manager payload', parsed.error.flatten())
     const params = request.params as { id: string }
-    const existing = await prisma.crewManager.findUnique({ where: { id: params.id }, include: { person: true, vesselAllocations: true } })
+    const existing = await prisma.crewManager.findUnique({ where: { id: params.id }, include: { person: true, vesselAllocations: true, reportingLines: true } })
     if (!existing) return notFound(reply, 'Crew manager not found')
     const updated = await prisma.$transaction(async (tx) => {
       if (parsed.data.deputyManagerId && parsed.data.deputyManagerId !== existing.deputyManagerId) {
+        const parentPlacement = await tx.deputyManagerReportingLine.findFirst({
+          where: { deputyManagerId: parsed.data.deputyManagerId, isPrimary: true },
+        })
+        if (!parentPlacement) throw new Error('Primary Deputy Manager placement is missing')
         await tx.crewManager.update({ where: { id: existing.id }, data: { deputyManagerId: parsed.data.deputyManagerId } })
+        const primaryLine = existing.reportingLines.find((line) => line.isPrimary) ?? existing.reportingLines[0]
+        if (primaryLine) {
+          await tx.crewManagerReportingLine.update({
+            where: { id: primaryLine.id },
+            data: {
+              deputyManagerId: parsed.data.deputyManagerId,
+              deputyManagerReportingLineId: parentPlacement.id,
+              isPrimary: true,
+            },
+          })
+        } else {
+          await tx.crewManagerReportingLine.create({
+            data: {
+              organizationId: existing.organizationId,
+              crewManagerId: existing.id,
+              deputyManagerId: parsed.data.deputyManagerId,
+              deputyManagerReportingLineId: parentPlacement.id,
+              isPrimary: true,
+            },
+          })
+        }
       }
       if (parsed.data.name || parsed.data.designation || parsed.data.email || parsed.data.phone || parsed.data.notes) {
         await tx.person.update({
@@ -392,6 +725,8 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!org) return notFound(reply, 'Organization not configured')
     const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId } })
     if (!crewManager) return notFound(reply, 'Crew manager not found')
+    const reportingLine = await resolveCrewManagerReportingLine(org.id, crewManager.id, parsed.data.crewManagerReportingLineId)
+    if (!reportingLine) return badRequest(reply, 'Select a valid Crew Manager reporting path.')
     const createdVessel = await prisma.$transaction(async (tx) => {
       const vessel = await tx.vessel.create({
         data: {
@@ -417,11 +752,13 @@ export async function organizationRoutes(app: FastifyInstance) {
         create: {
           vesselId: vessel.id,
           crewManagerId: crewManager.id,
+          crewManagerReportingLineId: reportingLine.id,
           assignedAssistantId: null,
           allocatedAt: new Date(),
         },
         update: {
           crewManagerId: crewManager.id,
+          crewManagerReportingLineId: reportingLine.id,
           assignedAssistantId: null,
           allocatedAt: new Date(),
         },
@@ -445,6 +782,18 @@ export async function organizationRoutes(app: FastifyInstance) {
       ? await prisma.crewManager.findUnique({ where: { id: targetCrewManagerId } })
       : null
     if (targetCrewManagerId && !crewManager) return notFound(reply, 'Crew manager not found')
+    const currentAllocation = existing.vesselAllocations[0]
+    const resolvedCrewManagerId = targetCrewManagerId || currentAllocation?.crewManagerId
+    const reportingLine = resolvedCrewManagerId && (targetCrewManagerId || parsed.data.crewManagerReportingLineId)
+      ? await resolveCrewManagerReportingLine(
+          existing.organizationId,
+          resolvedCrewManagerId,
+          parsed.data.crewManagerReportingLineId || currentAllocation?.crewManagerReportingLineId,
+        )
+      : null
+    if (resolvedCrewManagerId && (targetCrewManagerId || parsed.data.crewManagerReportingLineId) && !reportingLine) {
+      return badRequest(reply, 'Select a valid Crew Manager reporting path.')
+    }
     const updated = await prisma.$transaction(async (tx) => {
       const vessel = await tx.vessel.update({
         where: { id: existing.id },
@@ -471,11 +820,13 @@ export async function organizationRoutes(app: FastifyInstance) {
           create: {
             vesselId: vessel.id,
             crewManagerId: crewManager.id,
+            crewManagerReportingLineId: reportingLine!.id,
             assignedAssistantId: null,
             allocatedAt: new Date(),
           },
           update: {
             crewManagerId: crewManager.id,
+            crewManagerReportingLineId: reportingLine!.id,
             assignedAssistantId: null,
             allocatedAt: new Date(),
           },
@@ -509,17 +860,21 @@ export async function organizationRoutes(app: FastifyInstance) {
     if (!vessel) return notFound(reply, 'Vessel not found')
     const crewManager = await prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId } })
     if (!crewManager) return notFound(reply, 'Crew manager not found')
+    const reportingLine = await resolveCrewManagerReportingLine(vessel.organizationId, crewManager.id, parsed.data.crewManagerReportingLineId)
+    if (!reportingLine) return badRequest(reply, 'Select a valid Crew Manager reporting path.')
     const before = await prisma.vesselAllocation.findUnique({ where: { vesselId: vessel.id } })
     const allocation = await prisma.vesselAllocation.upsert({
       where: { vesselId: vessel.id },
       create: {
         vesselId: vessel.id,
         crewManagerId: crewManager.id,
+        crewManagerReportingLineId: reportingLine.id,
         assignedAssistantId: null,
         allocatedAt: new Date(),
       },
       update: {
         crewManagerId: crewManager.id,
+        crewManagerReportingLineId: reportingLine.id,
         assignedAssistantId: null,
         allocatedAt: new Date(),
       },

@@ -23,7 +23,7 @@ export const hierarchyApi = {
   deleteOperationsManager(id: string) {
     return apiClient.request(`/api/operations-managers/${id}`, { method: 'DELETE' })
   },
-  createDeputyManager(payload: Person & { operationsManagerId: string; sortOrder?: number }) {
+  createDeputyManager(payload: Person & { operationsManagerId: string; operationsManagerReportingLineId?: string; sortOrder?: number }) {
     return apiClient.request('/api/deputy-managers', { method: 'POST', body: JSON.stringify(payload) })
   },
   updateDeputyManager(id: string, payload: Partial<Person> & { operationsManagerId?: string; sortOrder?: number }) {
@@ -32,7 +32,7 @@ export const hierarchyApi = {
   deleteDeputyManager(id: string) {
     return apiClient.request(`/api/deputy-managers/${id}`, { method: 'DELETE' })
   },
-  createCrewManager(payload: Person & { deputyManagerId: string; sortOrder?: number }) {
+  createCrewManager(payload: Person & { deputyManagerId: string; deputyManagerReportingLineId?: string; sortOrder?: number }) {
     return apiClient.request('/api/crew-managers', { method: 'POST', body: JSON.stringify(payload) })
   },
   updateCrewManager(id: string, payload: Partial<Person> & { deputyManagerId?: string; sortOrder?: number }) {
@@ -40,5 +40,14 @@ export const hierarchyApi = {
   },
   deleteCrewManager(id: string) {
     return apiClient.request(`/api/crew-managers/${id}`, { method: 'DELETE' })
+  },
+  updatePlacement(payload: {
+    entityType: 'OPERATIONS_MANAGER' | 'DEPUTY_MANAGER' | 'CREW_MANAGER'
+    entityId: string
+    parentId: string
+    parentPlacementId?: string
+    action: 'MOVE' | 'COPY'
+  }) {
+    return apiClient.request('/api/hierarchy/placements', { method: 'POST', body: JSON.stringify(payload) })
   },
 }

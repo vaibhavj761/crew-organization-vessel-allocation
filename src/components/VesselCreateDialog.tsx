@@ -6,6 +6,7 @@ import { createId } from '../utils/createId'
 import { getAllCrewManagers } from '../utils/operationsAllocation'
 import { validateVesselMasterFields } from '../utils/vesselValidation'
 import { useChart } from '../state/ChartContext'
+import { VesselAssignmentFields } from './VesselAssignmentFields'
 
 function emptyVessel(sortOrder: number): Vessel {
   return {
@@ -35,6 +36,8 @@ export function VesselCreateDialog({ onClose }: { onClose: () => void }) {
   const nameRef = useRef<HTMLInputElement>(null)
   const crewManagers = getAllCrewManagers(data)
   const validation = validateVesselMasterFields(vessel)
+  const assignmentPathMissing = Boolean(vessel.crewManagerId)
+    && (!vessel.crewManagerReportingLineId || !vessel.deputyManagerId || !vessel.operationsManagerId)
 
   useEffect(() => {
     nameRef.current?.focus()
@@ -53,7 +56,7 @@ export function VesselCreateDialog({ onClose }: { onClose: () => void }) {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setSubmitted(true)
-    if (validation.name || validation.vesselType || validation.assignment) return
+    if (validation.name || validation.vesselType || validation.assignment || assignmentPathMissing) return
     setSaving(true)
     setError('')
     try {
@@ -91,14 +94,9 @@ export function VesselCreateDialog({ onClose }: { onClose: () => void }) {
             <input value={vessel.vesselType} onChange={(event) => update({ vesselType: event.target.value })} maxLength={120} disabled={saving} aria-invalid={submitted && Boolean(validation.vesselType)} />
             {submitted && validation.vesselType ? <small className="field-error">{validation.vesselType}</small> : null}
           </label>
-          <label>
-            Assignment <span aria-hidden="true">*</span>
-            <select value={vessel.crewManagerId} onChange={(event) => update({ crewManagerId: event.target.value })} disabled={saving} aria-invalid={submitted && Boolean(validation.assignment)}>
-              <option value="">Select Crew Manager</option>
-              {crewManagers.map((manager) => <option key={manager.id} value={manager.id}>{manager.person.name}</option>)}
-            </select>
-            {submitted && validation.assignment ? <small className="field-error">{validation.assignment}</small> : null}
-          </label>
+          <div className="field-span-2">
+            <VesselAssignmentFields data={data} vessel={vessel} onChange={update} disabled={saving} showErrors={submitted} />
+          </div>
           <label>
             Vessel status
             <select value={vessel.vesselStatus} onChange={(event) => update({ vesselStatus: event.target.value as Vessel['vesselStatus'] })} disabled={saving}>

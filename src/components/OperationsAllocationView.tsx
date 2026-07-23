@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CrewManagerNode, Vessel } from '../types'
 import { useChart } from '../state/ChartContext'
 import { getCrewManagerLayoutMode } from '../utils/chartLayout'
-import { getDeputyManagersForOperationsManager } from '../utils/operationsAllocation'
+import { getDeputyManagersForOperationsManager, vesselBelongsToCrewManagerPlacement } from '../utils/operationsAllocation'
 import { ChartHeader } from './ChartHeader'
 import { PersonCard } from './PersonCard'
 import { TeamCard } from './TeamCard'
@@ -22,7 +22,7 @@ export function OperationsAllocationView({
   canEdit?: boolean
 }) {
   const { data, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart } = useChart()
-  const [dialog, setDialog] = useState<{ mode: 'assign' | 'edit' | 'unassign'; team: CrewManagerNode; vessel?: Vessel } | null>(null)
+  const [dialog, setDialog] = useState<{ mode: 'assign' | 'reassign' | 'edit' | 'unassign'; team: CrewManagerNode; vessel?: Vessel } | null>(null)
 
   const director = useMemo(
     () => data.crewDirectors.find((item) => item.id === crewDirectorId),
@@ -48,8 +48,8 @@ export function OperationsAllocationView({
       .filter((deputy) => deputy.crewManagers.length || !crewManagerId),
     [crewManagerId, deputyManagerId, operationsManager],
   )
-  const visibleCrewManagers = visibleDeputies.flatMap((deputy) => deputy.crewManagers)
-  const visibleVesselCount = visibleCrewManagers.reduce((total, team) => total + data.vessels.filter((item) => item.crewManagerId === team.id || item.crewManagerId === team.person.id).length, 0)
+  const visibleCrewManagers = Array.from(new Map(visibleDeputies.flatMap((deputy) => deputy.crewManagers).map((manager) => [manager.id, manager])).values())
+  const visibleVesselCount = visibleCrewManagers.reduce((total, team) => total + data.vessels.filter((item) => vesselBelongsToCrewManagerPlacement(item, team)).length, 0)
 
   if (!crewDirectorId) {
     return (
@@ -127,7 +127,7 @@ export function OperationsAllocationView({
         {visibleDeputies.length ? visibleDeputies.map((deputy) => {
           const layoutMode = getCrewManagerLayoutMode(deputy.crewManagers.length)
           return (
-            <section className="deputy-allocation-section" key={deputy.id}>
+            <section className="deputy-allocation-section" key={deputy.reportingLineId || deputy.id}>
               <div className="deputy-heading">
                 <strong>{deputy.person.name}</strong>
                 <span>{deputy.person.designation || 'Deputy Crew Manager'}</span>
@@ -136,13 +136,18 @@ export function OperationsAllocationView({
               <div className={`team-grid operations-focus-grid layout-${layoutMode} manager-count-${Math.min(Math.max(deputy.crewManagers.length, 1), 4)}`}>
                 {deputy.crewManagers.length ? deputy.crewManagers.map((team) => (
                   <TeamCard
-                    key={team.id}
+                    key={team.reportingLineId || team.id}
                     team={team}
-                    vessels={data.vessels.filter((item) => item.crewManagerId === team.id || item.crewManagerId === team.person.id)}
+                    vessels={data.vessels.filter((item) => vesselBelongsToCrewManagerPlacement(item, team))}
                     vesselNamesOnly
                     onAssignVessel={canEdit ? () => setDialog({ mode: 'assign', team }) : undefined}
                     onEditVessel={canEdit ? (vessel) => setDialog({ mode: 'edit', team, vessel }) : undefined}
                     onUnassignVessel={canEdit ? (vessel) => setDialog({ mode: 'unassign', team, vessel }) : undefined}
+                    onVesselDrop={canEdit ? (vesselId) => {
+                      const vessel = data.vessels.find((item) => item.id === vesselId)
+                      if (!vessel || vesselBelongsToCrewManagerPlacement(vessel, team)) return
+                      setDialog({ mode: 'reassign', team, vessel })
+                    } : undefined}
                   />
                 )) : (
                   <div className="chart-empty-state">
@@ -171,7 +176,7 @@ export function OperationsAllocationView({
         vessel={dialog.vessel}
         vessels={data.vessels}
         onClose={() => setDialog(null)}
-        onAssign={(vesselId) => assignVesselFromChart(vesselId, dialog.team.id)}
+        onAssign={(vesselId) => assignVesselFromChart(vesselId, dialog.team.id, dialog.team.reportingLineId)}
         onSave={saveVesselFromChart}
         onUnassign={unassignVesselFromChart}
       /> : null}

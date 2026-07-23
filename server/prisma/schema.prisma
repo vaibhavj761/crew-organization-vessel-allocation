@@ -95,6 +95,9 @@ model Organization {
   operationsManagers    OperationsManager[]
   deputyManagers        DeputyManager[]
   crewManagers          CrewManager[]
+  operationsManagerReportingLines OperationsManagerReportingLine[]
+  deputyManagerReportingLines DeputyManagerReportingLine[]
+  crewManagerReportingLines CrewManagerReportingLine[]
   assistants            Assistant[]
   vessels               Vessel[]
 }
@@ -132,6 +135,7 @@ model CrewDirector {
   organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   person             Person             @relation(fields: [personId], references: [id], onDelete: Cascade)
   operationsManagers OperationsManager[]
+  reportingLines OperationsManagerReportingLine[]
 
   @@index([organizationId, sortOrder])
 }
@@ -149,6 +153,8 @@ model OperationsManager {
   crewDirector  CrewDirector @relation(fields: [crewDirectorId], references: [id], onDelete: Restrict)
   person        Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
   deputyManagers DeputyManager[]
+  reportingLines OperationsManagerReportingLine[]
+  deputyReportingLines DeputyManagerReportingLine[]
 
   @@index([organizationId, crewDirectorId, sortOrder])
 }
@@ -166,6 +172,8 @@ model DeputyManager {
   operationsManager OperationsManager @relation(fields: [operationsManagerId], references: [id], onDelete: Restrict)
   person            Person            @relation(fields: [personId], references: [id], onDelete: Cascade)
   crewManagers      CrewManager[]
+  reportingLines DeputyManagerReportingLine[]
+  crewReportingLines CrewManagerReportingLine[]
 
   @@index([organizationId, operationsManagerId, sortOrder])
 }
@@ -184,8 +192,69 @@ model CrewManager {
   person            Person            @relation(fields: [personId], references: [id], onDelete: Cascade)
   assistants        Assistant[]
   vesselAllocations VesselAllocation[]
+  reportingLines CrewManagerReportingLine[]
 
   @@index([organizationId, deputyManagerId, sortOrder])
+}
+
+model OperationsManagerReportingLine {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  operationsManagerId String
+  crewDirectorId      String
+  isPrimary           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  operationsManager OperationsManager @relation(fields: [operationsManagerId], references: [id], onDelete: Cascade)
+  crewDirector     CrewDirector     @relation(fields: [crewDirectorId], references: [id], onDelete: Cascade)
+  deputyReportingLines DeputyManagerReportingLine[]
+
+  @@unique([operationsManagerId, crewDirectorId])
+  @@index([organizationId, crewDirectorId])
+}
+
+model DeputyManagerReportingLine {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  deputyManagerId     String
+  operationsManagerId String
+  operationsManagerReportingLineId String
+  isPrimary           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deputyManager     DeputyManager     @relation(fields: [deputyManagerId], references: [id], onDelete: Cascade)
+  operationsManager OperationsManager @relation(fields: [operationsManagerId], references: [id], onDelete: Cascade)
+  operationsManagerReportingLine OperationsManagerReportingLine @relation(fields: [operationsManagerReportingLineId], references: [id], onDelete: Cascade)
+  crewReportingLines CrewManagerReportingLine[]
+
+  @@unique([deputyManagerId, operationsManagerReportingLineId])
+  @@index([organizationId, operationsManagerId])
+  @@index([operationsManagerReportingLineId])
+}
+
+model CrewManagerReportingLine {
+  id              String   @id @default(cuid())
+  organizationId  String
+  crewManagerId   String
+  deputyManagerId String
+  deputyManagerReportingLineId String
+  isPrimary       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  crewManager  CrewManager  @relation(fields: [crewManagerId], references: [id], onDelete: Cascade)
+  deputyManager DeputyManager @relation(fields: [deputyManagerId], references: [id], onDelete: Cascade)
+  deputyManagerReportingLine DeputyManagerReportingLine @relation(fields: [deputyManagerReportingLineId], references: [id], onDelete: Cascade)
+  vesselAllocations VesselAllocation[]
+
+  @@unique([crewManagerId, deputyManagerReportingLineId])
+  @@index([organizationId, deputyManagerId])
+  @@index([deputyManagerReportingLineId])
 }
 
 model Assistant {
@@ -236,6 +305,7 @@ model VesselAllocation {
   id                   String   @id @default(cuid())
   vesselId             String   @unique
   crewManagerId        String
+  crewManagerReportingLineId String
   assignedAssistantId  String?
   allocatedAt          DateTime @default(now())
   createdAt            DateTime @default(now())
@@ -243,9 +313,11 @@ model VesselAllocation {
 
   vessel           Vessel        @relation(fields: [vesselId], references: [id], onDelete: Cascade)
   crewManager      CrewManager    @relation(fields: [crewManagerId], references: [id], onDelete: Restrict)
+  crewManagerReportingLine CrewManagerReportingLine @relation(fields: [crewManagerReportingLineId], references: [id], onDelete: Restrict)
   assignedAssistant Assistant?    @relation(fields: [assignedAssistantId], references: [id], onDelete: SetNull)
 
   @@index([crewManagerId])
+  @@index([crewManagerReportingLineId])
 }
 
 model AuditLog {

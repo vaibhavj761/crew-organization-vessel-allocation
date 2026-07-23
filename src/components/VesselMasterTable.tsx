@@ -3,9 +3,10 @@ import { Plus, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useChart } from '../state/ChartContext'
 import type { Vessel, VesselFilters } from '../types'
-import { getAllCrewManagers } from '../utils/operationsAllocation'
+import { getAllCrewManagers, getCrewManagerReportingContext, getVesselPlacement } from '../utils/operationsAllocation'
 import { validateVesselMasterFields } from '../utils/vesselValidation'
 import { VesselCreateDialog } from './VesselCreateDialog'
+import { VesselAssignmentFields } from './VesselAssignmentFields'
 
 
 export function filterVessels(vessels: Vessel[], filters: VesselFilters, operationsManagers: { id: string; crewManagerIds: string[] }[]) {
@@ -16,7 +17,9 @@ export function filterVessels(vessels: Vessel[], filters: VesselFilters, operati
   return vessels.filter((vessel) => {
     const matchesQuery = !query || [vessel.name, vessel.ownerName, vessel.ownerPool, vessel.vesselDoc, vessel.vesselManager].some((value) => value.toLowerCase().includes(query))
     return matchesQuery
-      && (!crewManagerIds || crewManagerIds.has(vessel.crewManagerId))
+      && (!crewManagerIds || (vessel.operationsManagerId
+        ? vessel.operationsManagerId === filters.operationsManagerId
+        : crewManagerIds.has(vessel.crewManagerId)))
       && (!filters.crewManagerId || vessel.crewManagerId === filters.crewManagerId)
       && (!filters.vesselStatus || vessel.vesselStatus === filters.vesselStatus)
       && (!filters.managementType || vessel.managementType === filters.managementType)
@@ -30,7 +33,14 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const crewManagers = getAllCrewManagers(data)
-  const operationsManagers = data.operationsManagers.map((op) => ({ id: op.id, crewManagerIds: op.deputyManagers.flatMap((deputy) => deputy.crewManagers.map((cm) => cm.id)) }))
+  const operationsManagers = data.operationsManagers.map((op) => ({
+    id: op.id,
+    // A shared Crew Manager may report through several branches, but their
+    // vessels belong to exactly one allocation-owning (primary) placement.
+    crewManagerIds: op.deputyManagers.flatMap((deputy) => deputy.crewManagers
+      .filter((crewManager) => crewManager.isPrimaryReportingLine !== false)
+      .map((crewManager) => crewManager.id)),
+  }))
   const rows = useMemo(() => filterVessels(data.vessels, filters, operationsManagers), [data.vessels, filters])
 
   return (
@@ -56,7 +66,7 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
         <select value={filters.crewManagerId} onChange={(e) => setFilters({ ...filters, crewManagerId: e.target.value })}>
           <option value="">All Crew Managers</option>
           {crewManagers.filter((cm) => !filters.operationsManagerId || operationsManagers.find((item) => item.id === filters.operationsManagerId)?.crewManagerIds.includes(cm.id)).map((cm) => (
-            <option key={cm.id} value={cm.id}>{cm.person.name}</option>
+            <option key={cm.id} value={cm.id}>{cm.person.name}{getCrewManagerReportingContext(data, cm.id) ? ` — ${getCrewManagerReportingContext(data, cm.id)}` : ''}</option>
           ))}
         </select>
         <select value={filters.vesselStatus} onChange={(e) => setFilters({ ...filters, vesselStatus: e.target.value as VesselFilters['vesselStatus'] })}>
@@ -108,8 +118,11 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
   const { data, dispatch } = useChart()
   const crewManagers = getAllCrewManagers(data)
   const crewManager = crewManagers.find((item) => item.id === vessel.crewManagerId)
+  const placement = getVesselPlacement(data, vessel)
   const update = (patch: Partial<Vessel>) => dispatch({ type: 'updateVessel', value: { ...vessel, ...patch } })
   const validationErrors = editing ? validateVesselMasterFields(vessel) : { name: '', vesselType: '', assignment: '' }
+  const assignmentPathMissing = Boolean(vessel.crewManagerId)
+    && (!vessel.crewManagerReportingLineId || !vessel.deputyManagerId || !vessel.operationsManagerId)
 
   if (!editing) {
     return (
@@ -117,7 +130,7 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
         <td><strong>{vessel.name}</strong><small>{vessel.deadweightTonnage && `${vessel.deadweightTonnage} DWT`}</small></td>
         <td>{vessel.vesselType || 'Type not set'}<small>{vessel.vesselDoc || 'DOC not provided'}</small></td>
         <td>{vessel.ownerName || vessel.ownerPool || 'Owner not provided'}<small>{vessel.vesselManager || 'Manager not provided'}</small></td>
-        <td>{crewManager?.person.name || 'Unassigned'}<small>{crewManager?.person.designation || 'Crew Manager'}</small></td>
+        <td>{crewManager?.person.name || 'Unassigned'}<small>{placement ? `${placement.deputyManager.person.name} · ${placement.operationsManager.person.name}` : 'Reporting path not selected'}</small></td>
         <td><span className={`table-status table-status--${vessel.vesselStatus.toLowerCase()}`}>{vessel.vesselStatus.replaceAll('_', ' ')}</span><small className="management-label">{vessel.managementType.replaceAll('_', ' ')}</small></td>
         <td>{canEdit ? <>
           <button type="button" className="mini-add" onClick={() => setEditing(vessel.id)}>Edit</button>
@@ -141,11 +154,7 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
       </td>
       <td><input placeholder="Owner name" value={vessel.ownerName} onChange={(e) => update({ ownerName: e.target.value })} /><input placeholder="Owner pool" value={vessel.ownerPool} onChange={(e) => update({ ownerPool: e.target.value })} /><input placeholder="Vessel manager" value={vessel.vesselManager} onChange={(e) => update({ vesselManager: e.target.value })} /></td>
       <td>
-        <select aria-invalid={Boolean(validationErrors.assignment)} value={vessel.crewManagerId} onChange={(e) => update({ crewManagerId: e.target.value, assignedAssistantId: '' })}>
-          <option value="">Select assignment *</option>
-          {crewManagers.map((cm) => <option key={cm.id} value={cm.id}>{cm.person.name}</option>)}
-        </select>
-        {validationErrors.assignment ? <small className="field-error">{validationErrors.assignment}</small> : null}
+        <VesselAssignmentFields data={data} vessel={vessel} onChange={update} showErrors compact />
       </td>
       <td>
         <select value={vessel.vesselStatus} onChange={(e) => update({ vesselStatus: e.target.value as Vessel['vesselStatus'] })}>
@@ -158,7 +167,7 @@ function VesselRow({ vessel, editing, setEditing, canEdit }: { vessel: Vessel; e
           <option value="CREW_MANAGED">CREW_MANAGED</option>
         </select>
       </td>
-      <td><button type="button" className="button" onClick={() => setEditing('')} disabled={Boolean(validationErrors.name || validationErrors.vesselType || validationErrors.assignment)} title={validationErrors.name || validationErrors.vesselType || validationErrors.assignment || undefined}>Finish editing</button></td>
+      <td><button type="button" className="button" onClick={() => setEditing('')} disabled={Boolean(validationErrors.name || validationErrors.vesselType || validationErrors.assignment || assignmentPathMissing)} title={validationErrors.name || validationErrors.vesselType || validationErrors.assignment || (assignmentPathMissing ? 'Select the complete reporting path.' : undefined)}>Finish editing</button></td>
     </tr>
   )
 }

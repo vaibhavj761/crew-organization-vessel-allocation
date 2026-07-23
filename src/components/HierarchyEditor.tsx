@@ -36,7 +36,7 @@ export function HierarchyEditor() {
                 <h4>Operations Managers</h4>
                 <button type="button" className="mini-add" disabled={loadState !== 'ready'} onClick={() => dispatch({ type: 'addOperationsManager', value: { id: id(), crewDirectorId: director.id, sortOrder: directorOps.length + 1, person: person('OPERATIONS_MANAGER'), deputyManagers: [] } })}><Plus size={13} /> Add</button>
               </div>
-              {directorOps.length ? directorOps.map((op) => <OperationsManagerEditor key={op.id} op={op} />) : <div className="editor-empty">Add a Crew Operations Manager under this Crew Director.</div>}
+              {directorOps.length ? directorOps.map((op) => <OperationsManagerEditor key={op.reportingLineId || op.id} op={op} />) : <div className="editor-empty">Add a Crew Operations Manager under this Crew Director.</div>}
               <button type="button" className="button ghost danger-text" onClick={() => confirm('Delete this Crew Director? Operations Manager hierarchy under it must already be empty.') && dispatch({ type: 'deleteCrewDirector', id: director.id })}><Trash2 size={13} /> Delete Crew Director</button>
             </div>
           </details>
@@ -66,7 +66,7 @@ function OperationsManagerEditor({ op }: { op: OperationsManagerNode }) {
           <h4>Deputy Managers</h4>
           <button type="button" className="mini-add" disabled={loadState !== 'ready'} onClick={() => dispatch({ type: 'addDeputyManager', operationsManagerId: op.id, value: { id: id(), operationsManagerId: op.id, sortOrder: op.deputyManagers.length + 1, person: person('DEPUTY_MANAGER'), crewManagers: [] } })}><Plus size={13} /> Add</button>
         </div>
-        {op.deputyManagers.length ? op.deputyManagers.map((deputy) => <DeputyManagerEditor key={deputy.id} op={op} deputy={deputy} />) : <div className="editor-empty">Add a Deputy Manager before adding Crew Managers.</div>}
+        {op.deputyManagers.length ? op.deputyManagers.map((deputy) => <DeputyManagerEditor key={deputy.reportingLineId || deputy.id} op={op} deputy={deputy} />) : <div className="editor-empty">Add a Deputy Manager before adding Crew Managers.</div>}
         <button type="button" className="button ghost danger-text" onClick={() => confirm(`Delete Operations Manager ${op.person.name}? Deputy Managers below it must already be removed.`) && dispatch({ type: 'deleteOperationsManager', id: op.id })}><Trash2 size={13} /> Delete Operations Manager</button>
       </div>
     </details>
@@ -91,7 +91,7 @@ function DeputyManagerEditor({ op, deputy }: { op: OperationsManagerNode; deputy
           <h4>Crew Managers</h4>
           <button type="button" className="mini-add" disabled={loadState !== 'ready'} onClick={() => dispatch({ type: 'addCrewManager', deputyManagerId: deputy.id, value: { id: id(), sortOrder: deputy.crewManagers.length + 1, person: person('CREW_MANAGER'), vesselIds: [] } })}><Plus size={13} /> Add</button>
         </div>
-        {deputy.crewManagers.length ? deputy.crewManagers.map((cm) => <CrewManagerEditor key={cm.id} deputy={deputy} cm={cm} />) : <div className="editor-empty">Add Crew Managers under this Deputy Manager.</div>}
+        {deputy.crewManagers.length ? deputy.crewManagers.map((cm) => <CrewManagerEditor key={cm.reportingLineId || cm.id} deputy={deputy} cm={cm} />) : <div className="editor-empty">Add Crew Managers under this Deputy Manager.</div>}
         <button type="button" className="button ghost danger-text" onClick={()=>confirm('Delete this Deputy Manager? Crew Managers below it must already be removed.')&&dispatch({type:'deleteDeputyManager',operationsManagerId:op.id,id:deputy.id})}><Trash2 size={13}/> Delete Deputy Manager</button>
       </div>
     </details>

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CrewManagerNode, Vessel } from '../types'
 
-type DialogMode = 'assign' | 'edit' | 'unassign'
+type DialogMode = 'assign' | 'reassign' | 'edit' | 'unassign'
 
 export function VesselAllocationDialog({
   mode,
@@ -34,6 +34,7 @@ export function VesselAllocationDialog({
     setBusy(true)
     try {
       if (mode === 'assign') await onAssign(selectedVesselId)
+      if (mode === 'reassign' && vessel) await onAssign(vessel.id)
       if (mode === 'edit' && draft) await onSave(draft)
       if (mode === 'unassign' && vessel) await onUnassign(vessel.id)
       onClose()
@@ -48,8 +49,15 @@ export function VesselAllocationDialog({
     setDraft((current) => current ? { ...current, [key]: value } : current)
   }
 
-  const title = mode === 'assign' ? `Assign vessel to ${team.person.name}` : mode === 'edit' ? 'Review vessel details' : 'Remove vessel allocation'
-  const action = mode === 'assign' ? 'Confirm assignment' : mode === 'edit' ? 'Confirm vessel update' : 'Remove allocation'
+  const assigningUnassignedVessel = mode === 'reassign' && vessel && !vessel.crewManagerId
+  const title = mode === 'assign'
+    ? `Assign vessel to ${team.person.name}`
+    : mode === 'reassign'
+      ? `${assigningUnassignedVessel ? 'Assign' : 'Move'} vessel to ${team.person.name}`
+      : mode === 'edit' ? 'Review vessel details' : 'Remove vessel allocation'
+  const action = mode === 'assign' || assigningUnassignedVessel
+    ? 'Confirm assignment'
+    : mode === 'reassign' ? 'Confirm vessel move' : mode === 'edit' ? 'Confirm vessel update' : 'Remove allocation'
 
   return createPortal(
     <div className="dialog-backdrop allocation-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
@@ -66,6 +74,12 @@ export function VesselAllocationDialog({
               {unassigned.length ? unassigned.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.vesselType || 'Type not set'}</option>) : <option value="">No unassigned vessels available</option>}
             </select></label>
           </>
+        ) : mode === 'reassign' && vessel ? (
+          <div className="allocation-removal-summary allocation-reassignment-summary">
+            <strong>{vessel.name}</strong>
+            <span>will be {assigningUnassignedVessel ? 'assigned' : 'reassigned'} to {team.person.name}.</span>
+            <p>The Vessel Master record will remain unchanged and no duplicate vessel will be created.</p>
+          </div>
         ) : mode === 'edit' && draft ? (
           <>
             <p className="helper-copy">Review the changes carefully. Nothing is saved until you confirm below.</p>

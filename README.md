@@ -410,7 +410,7 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 9. Run `npm run seed:admin` once to create the first admin.
 10. Open the `ondigitalocean.app` URL.
 11. Log in with the seeded admin.
-12. Approve other users manually.
+12. Create other users from Admin → Access Management and share their one-time setup links securely.
 13. Export JSON after setup and after major changes.
 
 ### Production behavior
@@ -434,7 +434,7 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 - Auth tokens are not stored in localStorage.
 - CORS should allow only the configured frontend origin.
 - Pending, rejected, and disabled users cannot log in.
-- Access requests do not create active users.
+- Public access requests are disabled; Admins provision users with one-time setup links.
 - Password setup/reset links remain manual and one-time-use.
 - Prisma migrations are used for schema changes.
 - JSON export is the recommended backup after major updates.
@@ -452,3 +452,12 @@ The frontend build output stays in the root `dist/` folder. The Fastify server n
 - JSON: validated Version 2 planner data with automatic Version 1 migration
 
 Organization Chart and Operations & Vessel Allocation views can be exported. Direct PDF/PPT generation is intentionally deferred; SVG is the recommended PowerPoint format.
+
+## Drag-and-drop reporting and allocation
+
+- Admins and Editors can drag an Operations Manager onto a Crew Director, a Deputy Manager onto an Operations Manager, or a Crew Manager onto a Deputy Manager.
+- Every valid employee drop asks whether to move the employee or add another reporting line.
+- Adding a reporting line reuses the same employee record; it does not duplicate people or vessel allocations.
+- A Crew Manager can therefore appear under Deputy Managers belonging to different Operations Managers.
+- Dragging a vessel between Crew Manager cards in Operations & Vessel Allocation opens a confirmation before its single allocation is reassigned.
+- Vessel Master keeps one deduplicated Crew Manager assignment option and shows the manager's Operations reporting context.

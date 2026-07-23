@@ -427,8 +427,10 @@ async function applySingleAiAction(tx: Prisma.TransactionClient, action: AiStruc
         const vesselName = text(data.vesselName || target.vesselName)
         const duplicate = await tx.vessel.findFirst({ where: { organizationId, name: { equals: vesselName, mode: 'insensitive' } }, select: { id: true } })
         if (duplicate) throw new Error(`Vessel "${vesselName}" already exists.`)
+        const reportingLine = await tx.crewManagerReportingLine.findFirst({ where: { organizationId, crewManagerId: crewManager.id, isPrimary: true } })
+        if (!reportingLine) throw new Error('The selected Crew Manager has no active reporting path.')
         const vessel = await tx.vessel.create({ data: { organizationId, name: vesselName, vesselType: text(data.vesselType), vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', sortOrder: 0 } })
-        await tx.vesselAllocation.create({ data: { vesselId: vessel.id, crewManagerId: crewManager.id } })
+        await tx.vesselAllocation.create({ data: { vesselId: vessel.id, crewManagerId: crewManager.id, crewManagerReportingLineId: reportingLine.id } })
         updatedEntity = { type: 'Vessel', id: vessel.id, name: vessel.name }
         break
       }
@@ -440,7 +442,13 @@ async function applySingleAiAction(tx: Prisma.TransactionClient, action: AiStruc
         if (action.action === 'update_vessel_type') await tx.vessel.update({ where: { id: vessel.id }, data: { vesselType: text(data.vesselType) } })
         if (action.action === 'update_vessel_assignment') {
           const crewManager = await tx.crewManager.findUniqueOrThrow({ where: { id: ids.crewManagerId || '' } })
-          await tx.vesselAllocation.upsert({ where: { vesselId: vessel.id }, create: { vesselId: vessel.id, crewManagerId: crewManager.id }, update: { crewManagerId: crewManager.id, assignedAssistantId: null, allocatedAt: new Date() } })
+          const reportingLine = await tx.crewManagerReportingLine.findFirst({ where: { organizationId, crewManagerId: crewManager.id, isPrimary: true } })
+          if (!reportingLine) throw new Error('The selected Crew Manager has no active reporting path.')
+          await tx.vesselAllocation.upsert({
+            where: { vesselId: vessel.id },
+            create: { vesselId: vessel.id, crewManagerId: crewManager.id, crewManagerReportingLineId: reportingLine.id },
+            update: { crewManagerId: crewManager.id, crewManagerReportingLineId: reportingLine.id, assignedAssistantId: null, allocatedAt: new Date() },
+          })
         }
         updatedEntity = { type: 'Vessel', id: vessel.id, name: action.action === 'update_vessel_name' ? text(data.newVesselName || data.newName) : vessel.name }
         break

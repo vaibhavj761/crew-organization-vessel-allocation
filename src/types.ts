@@ -15,21 +15,35 @@ export interface CrewDirectorNode {
 }
 export interface CrewManagerNode {
   id: string; sortOrder: number; person: Person & { workflowRole: 'CREW_MANAGER' }
+  reportingLineId?: string
+  isPrimaryReportingLine?: boolean
+  primaryDeputyManagerId?: string
+  deputyManagerId?: string
+  deputyManagerIds?: string[]
   vesselIds: string[]
 }
 export interface DeputyManagerNode {
   id: string; sortOrder: number; person: Person & { workflowRole: 'DEPUTY_MANAGER' }
+  reportingLineId?: string
+  isPrimaryReportingLine?: boolean
+  primaryOperationsManagerId?: string
   operationsManagerId: string
+  operationsManagerIds?: string[]
   crewManagers: CrewManagerNode[]
 }
 export interface OperationsManagerNode {
   id: string; sortOrder: number; person: Person & { workflowRole: 'OPERATIONS_MANAGER' }
+  reportingLineId?: string
+  isPrimaryReportingLine?: boolean
+  primaryCrewDirectorId?: string
   crewDirectorId: string
+  crewDirectorIds?: string[]
   deputyManagers: DeputyManagerNode[]
 }
 export interface Vessel {
   id: string; name: string; vesselType: string; vesselDoc: string; deadweightTonnage: string
   ownerPool: string; ownerName: string; vesselManager: string; crewManagerId: string
+  crewManagerReportingLineId?: string; deputyManagerId?: string; operationsManagerId?: string
   assignedAssistantId: string; vesselStatus: VesselStatus; managementType: ManagementType
   notes: string; sortOrder: number
 }

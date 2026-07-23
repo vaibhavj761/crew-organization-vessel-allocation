@@ -1,6 +1,7 @@
 import { APP_NAME } from '../constants/app'
 import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, OperationsManagerNode, ViewMode } from '../types'
 import { choosePresentationColumns, EXPORT_HEIGHT, EXPORT_WIDTH, fitToSlide, getPresentationDensity, type PresentationDensity } from './exportLayout'
+import { vesselBelongsToCrewManagerPlacement } from './operationsAllocation'
 
 export type ExportTarget =
   | { kind: 'full' }
@@ -75,7 +76,7 @@ function allCrewManagers(data: ChartData) {
 
 function vesselsForCrewManager(data: ChartData, crewManager: CrewManagerNode) {
   return data.vessels
-    .filter((vessel) => vessel.crewManagerId === crewManager.id || vessel.crewManagerId === crewManager.person.id)
+    .filter((vessel) => vesselBelongsToCrewManagerPlacement(vessel, crewManager))
     .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name))
 }
 
@@ -224,7 +225,9 @@ function structureOperationsBlock(data: ChartData, block: OperationsBlock, x: nu
 }
 
 function renderStructure(data: ChartData, directors: CrewDirectorNode[]) {
-  const visibleOperations = data.operationsManagers.filter((operationsManager) => directors.some((director) => director.id === operationsManager.crewDirectorId))
+  const visibleOperations = data.operationsManagers.filter((operationsManager) =>
+    directors.some((director) => operationsManager.crewDirectorId === director.id),
+  )
   const metrics = {
     operationsManagers: visibleOperations.length,
     deputyManagers: visibleOperations.reduce((sum, operationsManager) => sum + operationsManager.deputyManagers.length, 0),

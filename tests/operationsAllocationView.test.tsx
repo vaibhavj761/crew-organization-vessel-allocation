@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OperationsAllocationView } from '../src/components/OperationsAllocationView'
 import type { ChartData, CrewManagerNode, DeputyManagerNode } from '../src/types'
@@ -22,6 +22,8 @@ vi.mock('../src/state/ChartContext', () => ({
 function crewManager(id: string, name: string): CrewManagerNode {
   return {
     id,
+    reportingLineId: `${id}-reporting-line`,
+    isPrimaryReportingLine: true,
     sortOrder: 1,
     person: {
       id: `${id}-person`,
@@ -121,6 +123,9 @@ function makeChartData(): ChartData {
 describe('OperationsAllocationView blank-canvas protection', () => {
   afterEach(() => {
     cleanup()
+    assignVesselMock.mockClear()
+    unassignVesselMock.mockClear()
+    saveVesselMock.mockClear()
   })
 
   it('shows all three Sidharth-style crew manager cards', () => {
@@ -161,5 +166,32 @@ describe('OperationsAllocationView blank-canvas protection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ocean Test' }))
     expect(screen.getByRole('dialog', { name: 'Review vessel details' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirm vessel update' })).toBeInTheDocument()
+  })
+
+  it('confirms a dragged vessel reassignment without creating a duplicate vessel', async () => {
+    const data = makeChartData()
+    data.vessels = [{ id: 'vessel-1', name: 'Ocean Test', vesselType: 'Bulk carrier', vesselDoc: '', deadweightTonnage: '', ownerPool: '', ownerName: '', vesselManager: '', crewManagerId: 'cm-one', assignedAssistantId: '', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', notes: '', sortOrder: 1 }]
+    chartDataMock.current = data
+    const { container } = render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" deputyManagerId="" crewManagerId="" canEdit />)
+    const values = new Map<string, string>()
+    const dataTransfer = {
+      types: ['application/x-crew-vessel'],
+      effectAllowed: 'all',
+      dropEffect: 'move',
+      setData: (type: string, value: string) => values.set(type, value),
+      getData: (type: string) => values.get(type) || '',
+    }
+
+    fireEvent.dragStart(screen.getByTitle('Ocean Test'), { dataTransfer })
+    const targetHeading = screen.getByText('Crew Manager Two')
+    const targetCard = targetHeading.closest('article')
+    expect(targetCard).not.toBeNull()
+    fireEvent.dragOver(targetCard!, { dataTransfer })
+    fireEvent.drop(targetCard!, { dataTransfer })
+
+    expect(screen.getByRole('dialog', { name: 'Move vessel to Crew Manager Two' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm vessel move' }))
+    await waitFor(() => expect(assignVesselMock).toHaveBeenCalledWith('vessel-1', 'cm-two', 'cm-two-reporting-line'))
+    expect(container.querySelectorAll('.vessel-name-pill')).toHaveLength(1)
   })
 })

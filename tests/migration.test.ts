@@ -27,3 +27,37 @@ describe('role migration', () => {
     expect(migration).toContain("AS ENUM ('ADMIN', 'EDITOR', 'VIEWER')")
   })
 })
+
+describe('hierarchy reporting migration', () => {
+  it('backfills primary reporting lines without duplicating employee or vessel records', () => {
+    const migration = readFileSync(resolve('server/prisma/migrations/20260723120000_add_hierarchy_reporting_lines/migration.sql'), 'utf8')
+    expect(migration).toContain('CREATE TABLE "CrewManagerReportingLine"')
+    expect(migration).toContain('FROM "OperationsManager"')
+    expect(migration).toContain('FROM "DeputyManager"')
+    expect(migration).toContain('FROM "CrewManager"')
+    expect(migration).not.toContain('INSERT INTO "Person"')
+    expect(migration).not.toContain('INSERT INTO "Vessel"')
+  })
+
+  it('scopes child reporting lines to exact parent placements without touching employees or vessels', () => {
+    const migration = readFileSync(resolve('server/prisma/migrations/20260723150000_scope_reporting_children_to_parent_placements/migration.sql'), 'utf8')
+    expect(migration).toContain('"operationsManagerReportingLineId"')
+    expect(migration).toContain('"deputyManagerReportingLineId"')
+    expect(migration).toContain('ORDER BY operations_line."isPrimary" DESC')
+    expect(migration).toContain('ORDER BY deputy_line."isPrimary" DESC')
+    expect(migration).not.toContain('INSERT INTO "Person"')
+    expect(migration).not.toContain('INSERT INTO "Vessel"')
+    expect(migration).not.toContain('DELETE FROM "Person"')
+    expect(migration).not.toContain('DELETE FROM "Vessel"')
+  })
+
+  it('backfills vessel placement paths without deleting vessel or allocation data', () => {
+    const migration = readFileSync(resolve('server/prisma/migrations/20260723170000_scope_vessel_allocations_to_reporting_placements/migration.sql'), 'utf8')
+    expect(migration).toContain('ADD COLUMN "crewManagerReportingLineId"')
+    expect(migration).toContain('WHERE reporting_line."crewManagerId" = allocation."crewManagerId"')
+    expect(migration).toContain('ORDER BY reporting_line."isPrimary" DESC')
+    expect(migration).toContain('ON DELETE RESTRICT')
+    expect(migration).not.toContain('DELETE FROM "Vessel"')
+    expect(migration).not.toContain('DELETE FROM "VesselAllocation"')
+  })
+})
