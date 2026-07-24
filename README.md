@@ -380,6 +380,10 @@ Build command:
 npm run do:build
 ```
 
+`do:build` generates the Prisma Client before TypeScript compilation. This
+ordering is required whenever reporting-line models or allocation fields change;
+otherwise DigitalOcean may compile against a stale client in `server/node_modules`.
+
 Run command:
 
 ```bash

@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "do:install": "npm install && npm --prefix server install",
-    "do:build": "npm run build && npm --prefix server run build",
+    "do:build": "npm --prefix server run prisma:generate && npm run build && npm --prefix server run build",
     "do:start": "npm --prefix server run start",
     "server:dev": "npm --prefix server run dev",
     "server:build": "npm --prefix server run build",
