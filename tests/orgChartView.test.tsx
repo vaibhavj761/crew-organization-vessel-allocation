@@ -3,11 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OrgChartView } from '../src/components/OrgChartView'
 import type { ChartData, CrewManagerNode, DeputyManagerNode } from '../src/types'
 
-const { chartDataMock, saveHierarchyPersonMock, createHierarchyPersonMock, updateHierarchyPlacementMock, assignVesselMock, createVesselRecordMock } = vi.hoisted(() => ({
+const { chartDataMock, saveHierarchyPersonMock, createHierarchyPersonMock, updateHierarchyPlacementMock, removeCrewManagerPlacementMock, removeDeputyManagerPlacementMock, removeOperationsManagerPlacementMock, assignVesselMock, createVesselRecordMock } = vi.hoisted(() => ({
   chartDataMock: { current: null as ChartData | null },
   saveHierarchyPersonMock: vi.fn(),
   createHierarchyPersonMock: vi.fn(),
   updateHierarchyPlacementMock: vi.fn(),
+  removeCrewManagerPlacementMock: vi.fn(),
+  removeDeputyManagerPlacementMock: vi.fn(),
+  removeOperationsManagerPlacementMock: vi.fn(),
   assignVesselMock: vi.fn(),
   createVesselRecordMock: vi.fn(),
 }))
@@ -18,6 +21,9 @@ vi.mock('../src/state/ChartContext', () => ({
     saveHierarchyPerson: saveHierarchyPersonMock,
     createHierarchyPerson: createHierarchyPersonMock,
     updateHierarchyPlacement: updateHierarchyPlacementMock,
+    removeCrewManagerPlacement: removeCrewManagerPlacementMock,
+    removeDeputyManagerPlacement: removeDeputyManagerPlacementMock,
+    removeOperationsManagerPlacement: removeOperationsManagerPlacementMock,
     assignVesselFromChart: assignVesselMock,
     createVesselRecord: createVesselRecordMock,
   }),
@@ -109,6 +115,9 @@ describe('OrgChartView deterministic layout', () => {
     saveHierarchyPersonMock.mockReset()
     createHierarchyPersonMock.mockReset()
     updateHierarchyPlacementMock.mockReset()
+    removeCrewManagerPlacementMock.mockReset()
+    removeDeputyManagerPlacementMock.mockReset()
+    removeOperationsManagerPlacementMock.mockReset()
     assignVesselMock.mockReset()
     createVesselRecordMock.mockReset()
   })
@@ -376,5 +385,64 @@ describe('OrgChartView deterministic layout', () => {
       parentPlacementId: 'deputy-placement-secondary',
       action: 'COPY',
     }))
+  })
+
+  it('removes only an empty Crew Manager reporting placement after confirmation', async () => {
+    chartDataMock.current = makeChartData(1)
+    removeCrewManagerPlacementMock.mockResolvedValue(undefined)
+    render(<OrgChartView canEdit />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Crew Manager 1 from organization chart' }))
+
+    expect(screen.getByRole('alertdialog', { name: 'Remove Crew Manager 1 from this chart branch?' })).toBeInTheDocument()
+    expect(screen.getByText(/employee profile, account and any other reporting placements will remain unchanged/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from chart' }))
+
+    await waitFor(() => expect(removeCrewManagerPlacementMock).toHaveBeenCalledWith('cm-1-reporting-line'))
+  })
+
+  it('blocks chart removal while the selected Crew Manager placement has vessels', () => {
+    chartDataMock.current = makeChartData(1)
+    const manager = chartDataMock.current.operationsManagers[0].deputyManagers[0].crewManagers[0]
+    chartDataMock.current.vessels = [{
+      id: 'vessel-blocking-removal',
+      name: 'MV Retained Allocation',
+      vesselType: 'Bulk Carrier',
+      vesselDoc: '',
+      deadweightTonnage: '',
+      ownerPool: '',
+      ownerName: '',
+      vesselManager: '',
+      crewManagerId: manager.id,
+      crewManagerReportingLineId: manager.reportingLineId,
+      assignedAssistantId: '',
+      vesselStatus: 'IN_MANAGEMENT',
+      managementType: 'CREW_MANAGED',
+      notes: '',
+      sortOrder: 1,
+    }]
+    render(<OrgChartView canEdit />)
+
+    expect(screen.getByRole('button', { name: 'Remove Crew Manager 1 from organization chart' })).toBeDisabled()
+    expect(removeCrewManagerPlacementMock).not.toHaveBeenCalled()
+  })
+
+  it('allows empty Deputy and Operations Manager placements to be removed from the chart', async () => {
+    chartDataMock.current = makeChartData(0)
+    chartDataMock.current.operationsManagers[0].reportingLineId = 'ops-reporting-line'
+    chartDataMock.current.operationsManagers[0].deputyManagers[0].reportingLineId = 'deputy-reporting-line'
+    removeDeputyManagerPlacementMock.mockResolvedValue(undefined)
+    const { rerender } = render(<OrgChartView canEdit />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove QA Deputy Manager from organization chart' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from chart' }))
+    await waitFor(() => expect(removeDeputyManagerPlacementMock).toHaveBeenCalledWith('deputy-reporting-line'))
+
+    chartDataMock.current.operationsManagers[0].deputyManagers = []
+    removeOperationsManagerPlacementMock.mockResolvedValue(undefined)
+    rerender(<OrgChartView canEdit />)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove QA Operations Manager from organization chart' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from chart' }))
+    await waitFor(() => expect(removeOperationsManagerPlacementMock).toHaveBeenCalledWith('ops-reporting-line'))
   })
 })

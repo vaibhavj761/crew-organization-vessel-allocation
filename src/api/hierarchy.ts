@@ -50,4 +50,13 @@ export const hierarchyApi = {
   }) {
     return apiClient.request('/api/hierarchy/placements', { method: 'POST', body: JSON.stringify(payload) })
   },
+  removeCrewManagerPlacement(reportingLineId: string) {
+    return apiClient.request(`/api/hierarchy/crew-manager-placements/${reportingLineId}`, { method: 'DELETE' })
+  },
+  removeDeputyManagerPlacement(reportingLineId: string) {
+    return apiClient.request(`/api/hierarchy/deputy-manager-placements/${reportingLineId}`, { method: 'DELETE' })
+  },
+  removeOperationsManagerPlacement(reportingLineId: string) {
+    return apiClient.request(`/api/hierarchy/operations-manager-placements/${reportingLineId}`, { method: 'DELETE' })
+  },
 }

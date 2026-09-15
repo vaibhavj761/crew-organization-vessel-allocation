@@ -7,6 +7,7 @@ import { ChartHeader } from './ChartHeader'
 import { PersonCard } from './PersonCard'
 import { TeamCard } from './TeamCard'
 import { VesselAllocationDialog } from './VesselAllocationDialog'
+import { ConfirmDialog } from './ConfirmDialog'
 
 export function OperationsAllocationView({
   crewDirectorId,
@@ -21,8 +22,12 @@ export function OperationsAllocationView({
   crewManagerId: string
   canEdit?: boolean
 }) {
-  const { data, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart } = useChart()
+  const { data, assignVesselFromChart, moveVesselsFromChart, unassignVesselFromChart, saveVesselFromChart } = useChart()
   const [dialog, setDialog] = useState<{ mode: 'assign' | 'reassign' | 'edit' | 'unassign'; team: CrewManagerNode; vessel?: Vessel } | null>(null)
+  const [selectedVesselIds, setSelectedVesselIds] = useState<Set<string>>(new Set())
+  const [destinationReportingLineId, setDestinationReportingLineId] = useState('')
+  const [confirmBulkMove, setConfirmBulkMove] = useState(false)
+  const [bulkMoveBusy, setBulkMoveBusy] = useState(false)
 
   const director = useMemo(
     () => data.crewDirectors.find((item) => item.id === crewDirectorId),
@@ -50,6 +55,28 @@ export function OperationsAllocationView({
   )
   const visibleCrewManagers = Array.from(new Map(visibleDeputies.flatMap((deputy) => deputy.crewManagers).map((manager) => [manager.id, manager])).values())
   const visibleVesselCount = visibleCrewManagers.reduce((total, team) => total + data.vessels.filter((item) => vesselBelongsToCrewManagerPlacement(item, team)).length, 0)
+  const crewManagerPlacements = useMemo(() => data.operationsManagers.flatMap((operation) => operation.deputyManagers.flatMap((deputy) => deputy.crewManagers
+    .filter((team) => Boolean(team.reportingLineId))
+    .map((team) => ({
+      team,
+      reportingLineId: team.reportingLineId!,
+      label: `${team.person.name} — ${deputy.person.name} / ${operation.person.name}`,
+    })))), [data.operationsManagers])
+  const bulkDestination = crewManagerPlacements.find((placement) => placement.reportingLineId === destinationReportingLineId)
+
+  const toggleVesselSelection = (vesselId: string) => setSelectedVesselIds((current) => {
+    const next = new Set(current)
+    if (next.has(vesselId)) next.delete(vesselId)
+    else next.add(vesselId)
+    return next
+  })
+
+  const toggleTeamVessels = (vessels: Vessel[]) => setSelectedVesselIds((current) => {
+    const next = new Set(current)
+    const allSelected = vessels.every((vessel) => next.has(vessel.id))
+    vessels.forEach((vessel) => allSelected ? next.delete(vessel.id) : next.add(vessel.id))
+    return next
+  })
 
   if (!crewDirectorId) {
     return (
@@ -123,6 +150,16 @@ export function OperationsAllocationView({
         <span><strong>Allocation</strong>{visibleDeputies.length} deputies · {visibleCrewManagers.length} crew managers · {visibleVesselCount} vessels</span>
       </div>
 
+      {canEdit ? <section className="bulk-allocation-toolbar" aria-label="Bulk vessel move">
+        <div><strong>{selectedVesselIds.size} selected</strong><span>Select vessels, then drag any selected row together or choose a destination below.</span></div>
+        <label><span>Move to</span><select aria-label="Destination Crew Manager/PIC" value={destinationReportingLineId} onChange={(event) => setDestinationReportingLineId(event.target.value)}>
+          <option value="">Select Crew Manager/PIC</option>
+          {crewManagerPlacements.map((placement) => <option key={placement.reportingLineId} value={placement.reportingLineId}>{placement.label}</option>)}
+        </select></label>
+        <button type="button" className="button secondary bulk-clear-button" disabled={!selectedVesselIds.size} onClick={() => setSelectedVesselIds(new Set())}>Clear</button>
+        <button type="button" className="button bulk-move-button" disabled={!selectedVesselIds.size || !bulkDestination} onClick={() => setConfirmBulkMove(true)}>Review move</button>
+      </section> : null}
+
       <div className="deputy-allocation-grid">
         {visibleDeputies.length ? visibleDeputies.map((deputy) => {
           const layoutMode = getCrewManagerLayoutMode(deputy.crewManagers.length)
@@ -143,10 +180,21 @@ export function OperationsAllocationView({
                     onAssignVessel={canEdit ? () => setDialog({ mode: 'assign', team }) : undefined}
                     onEditVessel={canEdit ? (vessel) => setDialog({ mode: 'edit', team, vessel }) : undefined}
                     onUnassignVessel={canEdit ? (vessel) => setDialog({ mode: 'unassign', team, vessel }) : undefined}
-                    onVesselDrop={canEdit ? (vesselId) => {
-                      const vessel = data.vessels.find((item) => item.id === vesselId)
-                      if (!vessel || vesselBelongsToCrewManagerPlacement(vessel, team)) return
-                      setDialog({ mode: 'reassign', team, vessel })
+                    selectedVesselIds={canEdit ? selectedVesselIds : undefined}
+                    onToggleVesselSelection={canEdit ? toggleVesselSelection : undefined}
+                    onToggleAllVessels={canEdit ? toggleTeamVessels : undefined}
+                    onVesselDrop={canEdit ? (vesselIds) => {
+                      const movableVessels = vesselIds
+                        .map((vesselId) => data.vessels.find((item) => item.id === vesselId))
+                        .filter((vessel): vessel is Vessel => Boolean(vessel && !vesselBelongsToCrewManagerPlacement(vessel, team)))
+                      if (!movableVessels.length) return
+                      if (movableVessels.length === 1) {
+                        setDialog({ mode: 'reassign', team, vessel: movableVessels[0] })
+                        return
+                      }
+                      setSelectedVesselIds(new Set(movableVessels.map((vessel) => vessel.id)))
+                      setDestinationReportingLineId(team.reportingLineId || '')
+                      setConfirmBulkMove(true)
                     } : undefined}
                   />
                 )) : (
@@ -179,6 +227,25 @@ export function OperationsAllocationView({
         onAssign={(vesselId) => assignVesselFromChart(vesselId, dialog.team.id, dialog.team.reportingLineId)}
         onSave={saveVesselFromChart}
         onUnassign={unassignVesselFromChart}
+      /> : null}
+      {confirmBulkMove && bulkDestination ? <ConfirmDialog
+        title={`Move ${selectedVesselIds.size} vessel${selectedVesselIds.size === 1 ? '' : 's'}?`}
+        message={`The selected vessels will move to ${bulkDestination.team.person.name}. Their Vessel Master records will not be duplicated or deleted.`}
+        confirmLabel="Confirm vessel move"
+        busyLabel="Moving…"
+        busy={bulkMoveBusy}
+        onCancel={() => setConfirmBulkMove(false)}
+        onConfirm={() => {
+          setBulkMoveBusy(true)
+          void moveVesselsFromChart([...selectedVesselIds], bulkDestination.team.id, bulkDestination.reportingLineId)
+            .then(() => {
+              setSelectedVesselIds(new Set())
+              setDestinationReportingLineId('')
+              setConfirmBulkMove(false)
+            })
+            .catch(() => undefined)
+            .finally(() => setBulkMoveBusy(false))
+        }}
       /> : null}
     </div>
   )

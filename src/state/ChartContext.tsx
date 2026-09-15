@@ -61,9 +61,13 @@ interface ChartContextValue {
   createHierarchyPerson: (target: HierarchyCreateTarget, person: Person) => Promise<void>
   createVesselRecord: (vessel: Vessel) => Promise<void>
   assignVesselFromChart: (vesselId: string, crewManagerId: string, crewManagerReportingLineId?: string) => Promise<void>
+  moveVesselsFromChart: (vesselIds: string[], crewManagerId: string, crewManagerReportingLineId: string) => Promise<void>
   unassignVesselFromChart: (vesselId: string) => Promise<void>
   saveVesselFromChart: (vessel: Vessel) => Promise<void>
   updateHierarchyPlacement: (payload: HierarchyPlacementPayload) => Promise<void>
+  removeCrewManagerPlacement: (reportingLineId: string) => Promise<void>
+  removeDeputyManagerPlacement: (reportingLineId: string) => Promise<void>
+  removeOperationsManagerPlacement: (reportingLineId: string) => Promise<void>
   refreshWorkspaceData: (reason: WorkspaceRefreshReason) => Promise<void>
 }
 
@@ -556,6 +560,16 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     await runConfirmedVesselWrite('Assigning vessel…', () => vesselsApi.updateVesselAllocation(vesselId, { crewManagerId, crewManagerReportingLineId }))
   }, [runConfirmedVesselWrite])
 
+  const moveVesselsFromChart = useCallback(async (vesselIds: string[], crewManagerId: string, crewManagerReportingLineId: string) => {
+    const uniqueVesselIds = [...new Set(vesselIds.filter(Boolean))]
+    if (!uniqueVesselIds.length) throw new Error('Select at least one vessel to move.')
+    if (!crewManagerId || !crewManagerReportingLineId) throw new Error('Select a destination Crew Manager/PIC.')
+    await runConfirmedVesselWrite(
+      `Moving ${uniqueVesselIds.length} vessel${uniqueVesselIds.length === 1 ? '' : 's'}…`,
+      () => vesselsApi.bulkUpdateVesselAllocations({ vesselIds: uniqueVesselIds, crewManagerId, crewManagerReportingLineId }),
+    )
+  }, [runConfirmedVesselWrite])
+
   const unassignVesselFromChart = useCallback(async (vesselId: string) => {
     if (!vesselId) throw new Error('Select a vessel to remove from this allocation.')
     await runConfirmedVesselWrite('Removing vessel allocation…', () => vesselsApi.deleteVesselAllocation(vesselId))
@@ -601,9 +615,69 @@ export function ChartProvider({ children }: { children: ReactNode }) {
     }
   }, [data, loadState, refreshWorkspaceData])
 
+  const removeCrewManagerPlacement = useCallback(async (reportingLineId: string) => {
+    if (!reportingLineId) throw new Error('The selected reporting placement is unavailable. Refresh and try again.')
+    if (loadState !== 'ready' || syncingRef.current) throw new Error('Please wait for the current workspace operation to finish.')
+    if (snapshotRef.current && !equalJson(snapshotRef.current, data)) {
+      throw new Error('Save or refresh your pending edits before removing a reporting line.')
+    }
+    syncingRef.current = true
+    setSaveState('saving')
+    setErrorMessage('')
+    setSyncNotice('Removing reporting line…')
+    try {
+      await hierarchyApi.removeCrewManagerPlacement(reportingLineId)
+      apiClient.clearGetRequestCache()
+      await refreshWorkspaceData('save-success')
+      setSaveState('saved')
+      setSyncNotice('Removed from organization chart')
+    } catch (error) {
+      const message = normalizeApiError(error, 'Could not remove this reporting line.')
+      setSaveState('error')
+      setErrorMessage(message)
+      setSyncNotice('')
+      throw new Error(message)
+    } finally {
+      syncingRef.current = false
+    }
+  }, [data, loadState, refreshWorkspaceData])
+
+  const removeEmptyHierarchyPlacement = useCallback(async (reportingLineId: string, operation: (id: string) => Promise<unknown>) => {
+    if (!reportingLineId) throw new Error('The selected reporting placement is unavailable. Refresh and try again.')
+    if (loadState !== 'ready' || syncingRef.current) throw new Error('Please wait for the current workspace operation to finish.')
+    if (snapshotRef.current && !equalJson(snapshotRef.current, data)) throw new Error('Save or refresh your pending edits before removing a reporting line.')
+    syncingRef.current = true
+    setSaveState('saving')
+    setErrorMessage('')
+    setSyncNotice('Removing reporting line…')
+    try {
+      await operation(reportingLineId)
+      apiClient.clearGetRequestCache()
+      await refreshWorkspaceData('save-success')
+      setSaveState('saved')
+      setSyncNotice('Removed from organization chart')
+    } catch (error) {
+      const message = normalizeApiError(error, 'Could not remove this reporting line.')
+      setSaveState('error')
+      setErrorMessage(message)
+      setSyncNotice('')
+      throw new Error(message)
+    } finally {
+      syncingRef.current = false
+    }
+  }, [data, loadState, refreshWorkspaceData])
+
+  const removeDeputyManagerPlacement = useCallback((reportingLineId: string) => (
+    removeEmptyHierarchyPlacement(reportingLineId, hierarchyApi.removeDeputyManagerPlacement)
+  ), [removeEmptyHierarchyPlacement])
+
+  const removeOperationsManagerPlacement = useCallback((reportingLineId: string) => (
+    removeEmptyHierarchyPlacement(reportingLineId, hierarchyApi.removeOperationsManagerPlacement)
+  ), [removeEmptyHierarchyPlacement])
+
   const value = useMemo(
-    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart, updateHierarchyPlacement, refreshWorkspaceData }),
-    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, unassignVesselFromChart, saveVesselFromChart, updateHierarchyPlacement, refreshWorkspaceData],
+    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, moveVesselsFromChart, unassignVesselFromChart, saveVesselFromChart, updateHierarchyPlacement, removeCrewManagerPlacement, removeDeputyManagerPlacement, removeOperationsManagerPlacement, refreshWorkspaceData }),
+    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, moveVesselsFromChart, unassignVesselFromChart, saveVesselFromChart, updateHierarchyPlacement, removeCrewManagerPlacement, removeDeputyManagerPlacement, removeOperationsManagerPlacement, refreshWorkspaceData],
   )
 
   return <ChartContext.Provider value={value}>{children}</ChartContext.Provider>

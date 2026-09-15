@@ -3,9 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OperationsAllocationView } from '../src/components/OperationsAllocationView'
 import type { ChartData, CrewManagerNode, DeputyManagerNode } from '../src/types'
 
-const { chartDataMock, assignVesselMock, unassignVesselMock, saveVesselMock } = vi.hoisted(() => ({
+const { chartDataMock, assignVesselMock, moveVesselsMock, unassignVesselMock, saveVesselMock } = vi.hoisted(() => ({
   chartDataMock: { current: null as ChartData | null },
   assignVesselMock: vi.fn().mockResolvedValue(undefined),
+  moveVesselsMock: vi.fn().mockResolvedValue(undefined),
   unassignVesselMock: vi.fn().mockResolvedValue(undefined),
   saveVesselMock: vi.fn().mockResolvedValue(undefined),
 }))
@@ -14,6 +15,7 @@ vi.mock('../src/state/ChartContext', () => ({
   useChart: () => ({
     data: chartDataMock.current,
     assignVesselFromChart: assignVesselMock,
+    moveVesselsFromChart: moveVesselsMock,
     unassignVesselFromChart: unassignVesselMock,
     saveVesselFromChart: saveVesselMock,
   }),
@@ -124,6 +126,7 @@ describe('OperationsAllocationView blank-canvas protection', () => {
   afterEach(() => {
     cleanup()
     assignVesselMock.mockClear()
+    moveVesselsMock.mockClear()
     unassignVesselMock.mockClear()
     saveVesselMock.mockClear()
   })
@@ -193,5 +196,55 @@ describe('OperationsAllocationView blank-canvas protection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm vessel move' }))
     await waitFor(() => expect(assignVesselMock).toHaveBeenCalledWith('vessel-1', 'cm-two', 'cm-two-reporting-line'))
     expect(container.querySelectorAll('.vessel-name-pill')).toHaveLength(1)
+  })
+
+  it('moves multiple selected vessels to one exact Crew Manager placement after confirmation', async () => {
+    const data = makeChartData()
+    data.vessels = [
+      { id: 'vessel-1', name: 'Ocean One', vesselType: 'Bulk carrier', vesselDoc: '', deadweightTonnage: '', ownerPool: '', ownerName: '', vesselManager: '', crewManagerId: 'cm-one', crewManagerReportingLineId: 'cm-one-reporting-line', assignedAssistantId: '', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', notes: '', sortOrder: 1 },
+      { id: 'vessel-2', name: 'Ocean Two', vesselType: 'Bulk carrier', vesselDoc: '', deadweightTonnage: '', ownerPool: '', ownerName: '', vesselManager: '', crewManagerId: 'cm-one', crewManagerReportingLineId: 'cm-one-reporting-line', assignedAssistantId: '', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', notes: '', sortOrder: 2 },
+    ]
+    chartDataMock.current = data
+    render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" deputyManagerId="" crewManagerId="" canEdit />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Ocean One' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Ocean Two' }))
+    fireEvent.change(screen.getByLabelText('Destination Crew Manager/PIC'), { target: { value: 'cm-two-reporting-line' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review move' }))
+    expect(screen.getByRole('alertdialog', { name: 'Move 2 vessels?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm vessel move' }))
+
+    await waitFor(() => expect(moveVesselsMock).toHaveBeenCalledWith(['vessel-1', 'vessel-2'], 'cm-two', 'cm-two-reporting-line'))
+  })
+
+  it('drags all selected vessels together to another Crew Manager/PIC', async () => {
+    const data = makeChartData()
+    data.vessels = [
+      { id: 'vessel-1', name: 'Ocean One', vesselType: 'Bulk carrier', vesselDoc: '', deadweightTonnage: '', ownerPool: '', ownerName: '', vesselManager: '', crewManagerId: 'cm-one', crewManagerReportingLineId: 'cm-one-reporting-line', assignedAssistantId: '', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', notes: '', sortOrder: 1 },
+      { id: 'vessel-2', name: 'Ocean Two', vesselType: 'Bulk carrier', vesselDoc: '', deadweightTonnage: '', ownerPool: '', ownerName: '', vesselManager: '', crewManagerId: 'cm-one', crewManagerReportingLineId: 'cm-one-reporting-line', assignedAssistantId: '', vesselStatus: 'IN_MANAGEMENT', managementType: 'FULL_MANAGED', notes: '', sortOrder: 2 },
+    ]
+    chartDataMock.current = data
+    render(<OperationsAllocationView crewDirectorId="director-amit" operationsManagerId="ops-sidharth" deputyManagerId="" crewManagerId="" canEdit />)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Ocean One' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Ocean Two' }))
+
+    const values = new Map<string, string>()
+    const dataTransfer = {
+      types: ['application/x-crew-vessel', 'application/x-crew-vessels'],
+      effectAllowed: 'all',
+      dropEffect: 'move',
+      setDragImage: vi.fn(),
+      setData: (type: string, value: string) => values.set(type, value),
+      getData: (type: string) => values.get(type) || '',
+    }
+    fireEvent.dragStart(screen.getAllByTitle('Drag 2 selected vessels')[0], { dataTransfer })
+    expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1)
+    const targetCard = screen.getByText('Crew Manager Two').closest('article')
+    fireEvent.dragOver(targetCard!, { dataTransfer })
+    fireEvent.drop(targetCard!, { dataTransfer })
+    expect(screen.getByRole('alertdialog', { name: 'Move 2 vessels?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm vessel move' }))
+
+    await waitFor(() => expect(moveVesselsMock).toHaveBeenCalledWith(['vessel-1', 'vessel-2'], 'cm-two', 'cm-two-reporting-line'))
   })
 })

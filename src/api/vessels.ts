@@ -17,6 +17,9 @@ export const vesselsApi = {
   updateVesselAllocation(id: string, payload: { crewManagerId: string; crewManagerReportingLineId?: string; assignedAssistantId?: string | null }) {
     return apiClient.request(`/api/vessels/${id}/allocation`, { method: 'PATCH', body: JSON.stringify(payload) })
   },
+  bulkUpdateVesselAllocations(payload: { vesselIds: string[]; crewManagerId: string; crewManagerReportingLineId: string }) {
+    return apiClient.request<{ success: boolean; updatedCount: number }>('/api/vessels/allocations/bulk', { method: 'PATCH', body: JSON.stringify(payload) })
+  },
   deleteVesselAllocation(id: string) {
     return apiClient.request<{ success: boolean }>(`/api/vessels/${id}/allocation`, { method: 'DELETE' })
   },

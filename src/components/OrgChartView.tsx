@@ -1,4 +1,4 @@
-import { GripVertical, Pencil, Plus } from 'lucide-react'
+import { GripVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { type DragEvent, useMemo, useState } from 'react'
 import { useChart, type HierarchyCreateTarget, type HierarchyPersonTarget } from '../state/ChartContext'
 import type { CrewManagerNode, Person, Vessel, WorkflowRole } from '../types'
@@ -12,6 +12,7 @@ import { getVesselPlacement, vesselBelongsToCrewManagerPlacement } from '../util
 import { OrgVesselSidebar, type VesselSearchResult } from './OrgVesselSidebar'
 import { VesselAllocationDialog } from './VesselAllocationDialog'
 import { VesselCreateDialog } from './VesselCreateDialog'
+import { ConfirmDialog } from './ConfirmDialog'
 
 type DraggedHierarchyEntity = {
   entityType: 'OPERATIONS_MANAGER' | 'DEPUTY_MANAGER' | 'CREW_MANAGER'
@@ -27,7 +28,7 @@ type AddPersonState = {
 }
 
 export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { selectedDirectorId?: string; canEdit?: boolean }) {
-  const { data, saveHierarchyPerson, updateHierarchyPlacement, assignVesselFromChart } = useChart()
+  const { data, saveHierarchyPerson, updateHierarchyPlacement, removeCrewManagerPlacement, removeDeputyManagerPlacement, removeOperationsManagerPlacement, assignVesselFromChart } = useChart()
   const [editing, setEditing] = useState<{ target: HierarchyPersonTarget; person: Person; levelLabel: string } | null>(null)
   const [adding, setAdding] = useState<AddPersonState | null>(null)
   const [dragging, setDragging] = useState<DraggedHierarchyEntity | null>(null)
@@ -36,6 +37,8 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
   const [vesselSearch, setVesselSearch] = useState('')
   const [creatingVessel, setCreatingVessel] = useState(false)
   const [pendingVesselAssignment, setPendingVesselAssignment] = useState<{ vessel: Vessel; team: CrewManagerNode } | null>(null)
+  const [placementToRemove, setPlacementToRemove] = useState<{ entityType: 'OPERATIONS_MANAGER' | 'DEPUTY_MANAGER' | 'CREW_MANAGER'; reportingLineId: string; personName: string; parentName: string } | null>(null)
+  const [removingPlacement, setRemovingPlacement] = useState(false)
   const visibleDirectors = selectedDirectorId ? data.crewDirectors.filter((director) => director.id === selectedDirectorId) : data.crewDirectors
   const vesselsForPlacement = (manager: Parameters<typeof vesselBelongsToCrewManagerPlacement>[1]) => (
     data.vessels.filter((vessel) => vesselBelongsToCrewManagerPlacement(vessel, manager))
@@ -172,6 +175,7 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
                           <b>{operationVesselCount ? `${operationVesselCount} VSLS` : `${op.deputyManagers.length} deputies`}</b>
                           {canEdit ? <div className="hierarchy-heading-actions">
                             <button type="button" className="chart-inline-edit" onClick={() => setEditing({ target: { kind: 'operationsManager', id: op.id }, person: op.person, levelLabel: 'Crew Operations Manager' })} aria-label={`Edit ${op.person.name}`}><Pencil size={12} /></button>
+                            {op.reportingLineId ? <button type="button" className="chart-inline-remove" disabled={op.deputyManagers.length > 0} onClick={() => setPlacementToRemove({ entityType: 'OPERATIONS_MANAGER', reportingLineId: op.reportingLineId!, personName: op.person.name, parentName: director.person.name })} aria-label={`Remove ${op.person.name} from organization chart`} title={op.deputyManagers.length ? 'Move or remove direct reports before removing this placement' : 'Remove from this reporting branch'}><Trash2 size={13} /></button> : null}
                             <button type="button" className="hierarchy-add-button" onClick={() => setAdding({ target: { kind: 'deputyManager', operationsManagerId: op.id, ...(op.reportingLineId ? { operationsManagerReportingLineId: op.reportingLineId } : {}) }, role: 'DEPUTY_MANAGER', parentName: op.person.name })} aria-label={`Add Deputy Manager under ${op.person.name}`} title="Add direct report"><Plus size={14} /></button>
                           </div> : null}
                         </div>
@@ -199,11 +203,14 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
                                 <b>{deputyVesselCount ? `${deputyVesselCount} VSLS` : `${deputy.crewManagers.length} crew managers`}</b>
                                 {canEdit ? <div className="hierarchy-heading-actions">
                                   <button type="button" className="chart-inline-edit" onClick={() => setEditing({ target: { kind: 'deputyManager', id: deputy.id, operationsManagerId: op.id }, person: deputy.person, levelLabel: 'Deputy Manager' })} aria-label={`Edit ${deputy.person.name}`}><Pencil size={12} /></button>
+                                  {deputy.reportingLineId ? <button type="button" className="chart-inline-remove" disabled={deputy.crewManagers.length > 0} onClick={() => setPlacementToRemove({ entityType: 'DEPUTY_MANAGER', reportingLineId: deputy.reportingLineId!, personName: deputy.person.name, parentName: op.person.name })} aria-label={`Remove ${deputy.person.name} from organization chart`} title={deputy.crewManagers.length ? 'Move or remove direct reports before removing this placement' : 'Remove from this reporting branch'}><Trash2 size={13} /></button> : null}
                                   <button type="button" className="hierarchy-add-button" onClick={() => setAdding({ target: { kind: 'crewManager', deputyManagerId: deputy.id, ...(deputy.reportingLineId ? { deputyManagerReportingLineId: deputy.reportingLineId } : {}) }, role: 'CREW_MANAGER', parentName: deputy.person.name })} aria-label={`Add Crew Manager under ${deputy.person.name}`} title="Add direct report"><Plus size={14} /></button>
                                 </div> : null}
                               </div>
                               <div className="org-crew-manager-grid layout-many">
-                                {deputy.crewManagers.length ? deputy.crewManagers.map((cm) => (
+                                {deputy.crewManagers.length ? deputy.crewManagers.map((cm) => {
+                                  const placementVessels = vesselsForPlacement(cm)
+                                  return (
                                   <div
                                     key={cm.reportingLineId || cm.id}
                                     className={`hierarchy-draggable-card ${dragging?.entityId === cm.id ? 'hierarchy-dragging' : ''}`}
@@ -215,16 +222,19 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
                                     {canEdit ? <GripVertical className="hierarchy-card-grip" size={14} aria-hidden="true" /> : null}
                                     <TeamCard
                                       team={cm}
-                                      vessels={vesselsForPlacement(cm)}
-                                      highlightedVessels={normalizedVesselSearch ? vesselsForPlacement(cm).filter((vessel) => vessel.name.toLocaleLowerCase().includes(normalizedVesselSearch)) : []}
+                                      vessels={placementVessels}
+                                      highlightedVessels={normalizedVesselSearch ? placementVessels.filter((vessel) => vessel.name.toLocaleLowerCase().includes(normalizedVesselSearch)) : []}
                                       compact
                                       showVessels={false}
                                       showVesselCountTooltip
-                                      onVesselDrop={canEdit ? (vesselId) => beginVesselAssignment(vesselId, cm) : undefined}
+                                      onVesselDrop={canEdit ? (vesselIds) => beginVesselAssignment(vesselIds[0], cm) : undefined}
                                       onEdit={canEdit ? () => setEditing({ target: { kind: 'crewManager', id: cm.id, deputyManagerId: deputy.id }, person: cm.person, levelLabel: 'Crew Manager' }) : undefined}
+                                      onRemoveFromChart={canEdit && cm.reportingLineId ? () => setPlacementToRemove({ entityType: 'CREW_MANAGER', reportingLineId: cm.reportingLineId!, personName: cm.person.name, parentName: deputy.person.name }) : undefined}
+                                      removeFromChartDisabled={placementVessels.length > 0}
                                     />
                                   </div>
-                                )) : (
+                                  )
+                                }) : (
                                   <div className="chart-empty-state">
                                     <strong>No Crew Managers assigned yet</strong>
                                     <span>Add a Crew Manager below this Deputy Manager.</span>
@@ -297,6 +307,26 @@ export function OrgChartView({ selectedDirectorId = '', canEdit = false }: { sel
         />
       ) : null}
       {creatingVessel ? <VesselCreateDialog onClose={() => setCreatingVessel(false)} /> : null}
+      {placementToRemove ? <ConfirmDialog
+        title={`Remove ${placementToRemove.personName} from this chart branch?`}
+        message={`This removes only the reporting line under ${placementToRemove.parentName}. The employee profile, account and any other reporting placements will remain unchanged.`}
+        confirmLabel="Remove from chart"
+        busyLabel="Removing…"
+        busy={removingPlacement}
+        onCancel={() => setPlacementToRemove(null)}
+        onConfirm={() => {
+          setRemovingPlacement(true)
+          const removePlacement = placementToRemove.entityType === 'OPERATIONS_MANAGER'
+            ? removeOperationsManagerPlacement
+            : placementToRemove.entityType === 'DEPUTY_MANAGER'
+              ? removeDeputyManagerPlacement
+              : removeCrewManagerPlacement
+          void removePlacement(placementToRemove.reportingLineId)
+            .then(() => setPlacementToRemove(null))
+            .catch(() => undefined)
+            .finally(() => setRemovingPlacement(false))
+        }}
+      /> : null}
     </div>
   )
 }

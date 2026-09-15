@@ -58,6 +58,12 @@ const hierarchyPlacementSchema = z.object({
   action: z.enum(['MOVE', 'COPY']),
 })
 
+const bulkAllocationSchema = z.object({
+  vesselIds: z.array(z.string().trim().min(1)).min(1, 'Select at least one vessel.').max(100, 'Move no more than 100 vessels at once.'),
+  crewManagerId: z.string().trim().min(1, 'Select a destination Crew Manager/PIC.'),
+  crewManagerReportingLineId: z.string().trim().min(1, 'Select a destination reporting path.'),
+})
+
 export async function organizationRoutes(app: FastifyInstance) {
   app.get('/api/organization', async (request, reply) => {
     const user = await requireCurrentUser(request, reply)
@@ -325,6 +331,121 @@ export async function organizationRoutes(app: FastifyInstance) {
       ipAddress: requestIp(request),
     })
     return reply.send({ success: true, action, ...result })
+  })
+
+  app.delete('/api/hierarchy/operations-manager-placements/:id', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const { id } = request.params as { id: string }
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+    const placement = await prisma.operationsManagerReportingLine.findUnique({
+      where: { id },
+      include: {
+        crewDirector: { include: { person: true } },
+        operationsManager: { include: { person: true, reportingLines: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } } },
+        deputyReportingLines: { select: { id: true }, take: 1 },
+      },
+    })
+    if (!placement || placement.organizationId !== organization.id) return notFound(reply, 'Operations Manager reporting placement not found')
+    if (placement.deputyReportingLines.length) return badRequest(reply, 'Move or remove this placement’s direct reports before removing it from the organization chart.')
+    const remaining = placement.operationsManager.reportingLines.filter((line) => line.id !== placement.id)
+    await prisma.$transaction(async (tx) => {
+      await tx.operationsManagerReportingLine.delete({ where: { id: placement.id } })
+      if (placement.isPrimary && remaining.length) {
+        const replacement = remaining[0]
+        await tx.operationsManagerReportingLine.updateMany({ where: { operationsManagerId: placement.operationsManagerId }, data: { isPrimary: false } })
+        await tx.operationsManagerReportingLine.update({ where: { id: replacement.id }, data: { isPrimary: true } })
+        await tx.operationsManager.update({ where: { id: placement.operationsManagerId }, data: { crewDirectorId: replacement.crewDirectorId } })
+      }
+    })
+    await writeAuditLog({ userId: user.id, action: 'hierarchy.reporting.remove', entityType: 'OPERATIONS_MANAGER', entityId: placement.operationsManagerId, beforeJson: placement, afterJson: { removedReportingLineId: placement.id, employeeRetained: true }, ipAddress: requestIp(request) })
+    return reply.send({ success: true, employeeRetained: true, managerName: placement.operationsManager.person.name, parentName: placement.crewDirector.person.name })
+  })
+
+  app.delete('/api/hierarchy/deputy-manager-placements/:id', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const { id } = request.params as { id: string }
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+    const placement = await prisma.deputyManagerReportingLine.findUnique({
+      where: { id },
+      include: {
+        operationsManager: { include: { person: true } },
+        deputyManager: { include: { person: true, reportingLines: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } } },
+        crewReportingLines: { select: { id: true }, take: 1 },
+      },
+    })
+    if (!placement || placement.organizationId !== organization.id) return notFound(reply, 'Deputy Manager reporting placement not found')
+    if (placement.crewReportingLines.length) return badRequest(reply, 'Move or remove this placement’s direct reports before removing it from the organization chart.')
+    const remaining = placement.deputyManager.reportingLines.filter((line) => line.id !== placement.id)
+    await prisma.$transaction(async (tx) => {
+      await tx.deputyManagerReportingLine.delete({ where: { id: placement.id } })
+      if (placement.isPrimary && remaining.length) {
+        const replacement = remaining[0]
+        await tx.deputyManagerReportingLine.updateMany({ where: { deputyManagerId: placement.deputyManagerId }, data: { isPrimary: false } })
+        await tx.deputyManagerReportingLine.update({ where: { id: replacement.id }, data: { isPrimary: true } })
+        await tx.deputyManager.update({ where: { id: placement.deputyManagerId }, data: { operationsManagerId: replacement.operationsManagerId } })
+      }
+    })
+    await writeAuditLog({ userId: user.id, action: 'hierarchy.reporting.remove', entityType: 'DEPUTY_MANAGER', entityId: placement.deputyManagerId, beforeJson: placement, afterJson: { removedReportingLineId: placement.id, employeeRetained: true }, ipAddress: requestIp(request) })
+    return reply.send({ success: true, employeeRetained: true, managerName: placement.deputyManager.person.name, parentName: placement.operationsManager.person.name })
+  })
+
+  app.delete('/api/hierarchy/crew-manager-placements/:id', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const { id } = request.params as { id: string }
+    if (!id?.trim()) return badRequest(reply, 'Reporting placement is required')
+
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+    const placement = await prisma.crewManagerReportingLine.findUnique({
+      where: { id },
+      include: {
+        deputyManager: { include: { person: true } },
+        crewManager: { include: { person: true, reportingLines: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } } },
+        vesselAllocations: { select: { id: true }, take: 1 },
+      },
+    })
+    if (!placement || placement.organizationId !== organization.id) return notFound(reply, 'Crew Manager reporting placement not found')
+    if (placement.vesselAllocations.length) {
+      return badRequest(reply, 'Move or unassign this reporting placement’s vessels before removing it from the organization chart.')
+    }
+
+    const remainingPlacements = placement.crewManager.reportingLines.filter((line) => line.id !== placement.id)
+    await prisma.$transaction(async (tx) => {
+      await tx.crewManagerReportingLine.delete({ where: { id: placement.id } })
+      if (placement.isPrimary && remainingPlacements.length) {
+        const replacement = remainingPlacements[0]
+        await tx.crewManagerReportingLine.updateMany({
+          where: { crewManagerId: placement.crewManagerId },
+          data: { isPrimary: false },
+        })
+        await tx.crewManagerReportingLine.update({ where: { id: replacement.id }, data: { isPrimary: true } })
+        await tx.crewManager.update({
+          where: { id: placement.crewManagerId },
+          data: { deputyManagerId: replacement.deputyManagerId },
+        })
+      }
+    })
+
+    await writeAuditLog({
+      userId: user.id,
+      action: 'hierarchy.reporting.remove',
+      entityType: 'CREW_MANAGER',
+      entityId: placement.crewManagerId,
+      beforeJson: entitySnapshot(placement),
+      afterJson: { removedReportingLineId: placement.id, employeeRetained: true },
+      ipAddress: requestIp(request),
+    })
+    return reply.send({
+      success: true,
+      employeeRetained: true,
+      managerName: placement.crewManager.person.name,
+      parentName: placement.deputyManager.person.name,
+    })
   })
 
   app.post('/api/crew-directors', async (request, reply) => {
@@ -848,6 +969,41 @@ export async function organizationRoutes(app: FastifyInstance) {
     await prisma.vessel.delete({ where: { id: existing.id } })
     await writeAuditLog({ userId: user.id, action: 'vessel.delete', entityType: 'Vessel', entityId: existing.id, beforeJson: existing, ipAddress: requestIp(request) })
     return noContent(reply)
+  })
+
+  app.patch('/api/vessels/allocations/bulk', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const parsed = bulkAllocationSchema.safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid bulk allocation payload'), parsed.error.flatten())
+    const vesselIds = [...new Set(parsed.data.vesselIds)]
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+    const [crewManager, vessels, before] = await Promise.all([
+      prisma.crewManager.findUnique({ where: { id: parsed.data.crewManagerId } }),
+      prisma.vessel.findMany({ where: { id: { in: vesselIds }, organizationId: organization.id } }),
+      prisma.vesselAllocation.findMany({ where: { vesselId: { in: vesselIds } } }),
+    ])
+    if (!crewManager || crewManager.organizationId !== organization.id) return notFound(reply, 'Crew Manager/PIC not found')
+    if (vessels.length !== vesselIds.length) return badRequest(reply, 'One or more selected vessels are no longer available. Refresh and try again.')
+    const reportingLine = await resolveCrewManagerReportingLine(organization.id, crewManager.id, parsed.data.crewManagerReportingLineId)
+    if (!reportingLine) return badRequest(reply, 'Select a valid Crew Manager/PIC reporting path.')
+
+    await prisma.$transaction(vesselIds.map((vesselId) => prisma.vesselAllocation.upsert({
+      where: { vesselId },
+      create: { vesselId, crewManagerId: crewManager.id, crewManagerReportingLineId: reportingLine.id, assignedAssistantId: null, allocatedAt: new Date() },
+      update: { crewManagerId: crewManager.id, crewManagerReportingLineId: reportingLine.id, assignedAssistantId: null, allocatedAt: new Date() },
+    })))
+    await writeAuditLog({
+      userId: user.id,
+      action: 'vessel.allocation.bulk-update',
+      entityType: 'VesselAllocationBatch',
+      entityId: reportingLine.id,
+      beforeJson: before,
+      afterJson: { vesselIds, crewManagerId: crewManager.id, crewManagerReportingLineId: reportingLine.id },
+      ipAddress: requestIp(request),
+    })
+    return reply.send({ success: true, updatedCount: vesselIds.length })
   })
 
   app.patch('/api/vessels/:id/allocation', async (request, reply) => {
