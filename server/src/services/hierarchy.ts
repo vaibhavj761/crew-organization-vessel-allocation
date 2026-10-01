@@ -1,7 +1,7 @@
 import { prisma } from '../db/prisma.js'
 
 export async function getOrganizationHierarchy(organizationId: string) {
-  const [organization, crewDirectors, operationsManagers, deputyManagers, crewManagers, allocations, operationsLines, deputyLines, crewLines] = await Promise.all([
+  const [organization, crewDirectors, operationsManagers, deputyManagers, crewManagers, allocations, operationsLines, deputyLines, crewLines, managementPositions] = await Promise.all([
     prisma.organization.findUnique({ where: { id: organizationId } }),
     prisma.crewDirector.findMany({ where: { organizationId }, orderBy: { sortOrder: 'asc' }, include: { person: true } }),
     prisma.operationsManager.findMany({ where: { organizationId }, orderBy: { sortOrder: 'asc' }, include: { person: true } }),
@@ -11,11 +11,40 @@ export async function getOrganizationHierarchy(organizationId: string) {
     prisma.operationsManagerReportingLine.findMany({ where: { organizationId }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] }),
     prisma.deputyManagerReportingLine.findMany({ where: { organizationId }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] }),
     prisma.crewManagerReportingLine.findMany({ where: { organizationId }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] }),
+    prisma.managementHierarchyPosition.findMany({
+      where: { organizationId },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: { person: true, level: true },
+    }),
   ])
 
   const operationsById = new Map(operationsManagers.map((manager) => [manager.id, manager]))
   const deputiesById = new Map(deputyManagers.map((manager) => [manager.id, manager]))
   const crewById = new Map(crewManagers.map((manager) => [manager.id, manager]))
+  const operationsLinesByDirector = new Map<string, typeof operationsLines>()
+  const deputyLinesByOperationsPlacement = new Map<string, typeof deputyLines>()
+  const crewLinesByDeputyPlacement = new Map<string, typeof crewLines>()
+  const positionsByDirector = new Map<string, typeof managementPositions>()
+  for (const line of operationsLines) {
+    const list = operationsLinesByDirector.get(line.crewDirectorId) ?? []
+    list.push(line)
+    operationsLinesByDirector.set(line.crewDirectorId, list)
+  }
+  for (const line of deputyLines) {
+    const list = deputyLinesByOperationsPlacement.get(line.operationsManagerReportingLineId) ?? []
+    list.push(line)
+    deputyLinesByOperationsPlacement.set(line.operationsManagerReportingLineId, list)
+  }
+  for (const line of crewLines) {
+    const list = crewLinesByDeputyPlacement.get(line.deputyManagerReportingLineId) ?? []
+    list.push(line)
+    crewLinesByDeputyPlacement.set(line.deputyManagerReportingLineId, list)
+  }
+  for (const position of managementPositions) {
+    const list = positionsByDirector.get(position.crewDirectorId) ?? []
+    list.push(position)
+    positionsByDirector.set(position.crewDirectorId, list)
+  }
   const vesselsByCrewManagerPlacement = new Map<string, Array<{ id: string; name: string }>>()
   for (const allocation of allocations) {
     const list = vesselsByCrewManagerPlacement.get(allocation.crewManagerReportingLineId) ?? []
@@ -47,8 +76,16 @@ export async function getOrganizationHierarchy(organizationId: string) {
     crewDirectors: crewDirectors.map((director) => ({
       id: director.id,
       person: director.person,
-      operationsManagers: operationsLines
-        .filter((line) => line.crewDirectorId === director.id)
+      managementPositions: (positionsByDirector.get(director.id) ?? []).map((position) => ({
+        id: position.id,
+        crewDirectorId: position.crewDirectorId,
+        parentPositionId: position.parentPositionId,
+        levelId: position.levelId,
+        levelName: position.level.name,
+        sortOrder: position.sortOrder,
+        person: position.person,
+      })),
+      operationsManagers: (operationsLinesByDirector.get(director.id) ?? [])
         .map((operationsLine) => {
           const operationsManager = operationsById.get(operationsLine.operationsManagerId)
           if (!operationsManager) return null
@@ -56,12 +93,12 @@ export async function getOrganizationHierarchy(organizationId: string) {
             id: operationsManager.id,
             reportingLineId: operationsLine.id,
             isPrimaryReportingLine: operationsLine.isPrimary,
+            managementHierarchyPositionId: operationsLine.managementHierarchyPositionId,
             crewDirectorId: director.id,
             primaryCrewDirectorId: operationsManager.crewDirectorId,
             crewDirectorIds: crewDirectorIdsByOperationsManager.get(operationsManager.id) ?? [operationsManager.crewDirectorId],
             person: operationsManager.person,
-            deputyManagers: deputyLines
-              .filter((line) => line.operationsManagerReportingLineId === operationsLine.id)
+            deputyManagers: (deputyLinesByOperationsPlacement.get(operationsLine.id) ?? [])
               .map((deputyLine) => {
                 const deputyManager = deputiesById.get(deputyLine.deputyManagerId)
                 if (!deputyManager) return null
@@ -73,8 +110,7 @@ export async function getOrganizationHierarchy(organizationId: string) {
                   primaryOperationsManagerId: deputyManager.operationsManagerId,
                   operationsManagerIds: operationsManagerIdsByDeputy.get(deputyManager.id) ?? [deputyManager.operationsManagerId],
                   person: deputyManager.person,
-                  crewManagers: crewLines
-                    .filter((line) => line.deputyManagerReportingLineId === deputyLine.id)
+                  crewManagers: (crewLinesByDeputyPlacement.get(deputyLine.id) ?? [])
                     .map((crewLine) => {
                       const crewManager = crewById.get(crewLine.crewManagerId)
                       if (!crewManager) return null

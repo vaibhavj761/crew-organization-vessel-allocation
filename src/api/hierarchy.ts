@@ -14,7 +14,7 @@ export const hierarchyApi = {
   deleteCrewDirector(id: string) {
     return apiClient.request(`/api/crew-directors/${id}`, { method: 'DELETE' })
   },
-  createOperationsManager(payload: Person & { crewDirectorId: string; sortOrder?: number }) {
+  createOperationsManager(payload: Person & { crewDirectorId: string; managementHierarchyPositionId?: string; sortOrder?: number }) {
     return apiClient.request('/api/operations-managers', { method: 'POST', body: JSON.stringify(payload) })
   },
   updateOperationsManager(id: string, payload: Partial<Person> & { crewDirectorId?: string; sortOrder?: number }) {
@@ -58,5 +58,32 @@ export const hierarchyApi = {
   },
   removeOperationsManagerPlacement(reportingLineId: string) {
     return apiClient.request(`/api/hierarchy/operations-manager-placements/${reportingLineId}`, { method: 'DELETE' })
+  },
+  createManagementPosition(payload: {
+    crewDirectorId: string
+    parentPositionId?: string | null
+    levelName: string
+    name: string
+    designation: string
+    email?: string
+    phone?: string
+    notes?: string
+    adoptDirectReports?: boolean
+  }) {
+    return apiClient.request('/api/hierarchy/management-positions', { method: 'POST', body: JSON.stringify(payload) })
+  },
+  updateManagementPosition(id: string, payload: Partial<{ levelName: string; name: string; designation: string; email: string; phone: string; notes: string; sortOrder: number }>) {
+    return apiClient.request(`/api/hierarchy/management-positions/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+  },
+  moveManagementPosition(id: string, parentPositionId: string | null) {
+    return apiClient.request(`/api/hierarchy/management-positions/${id}/move`, { method: 'POST', body: JSON.stringify({ parentPositionId }) })
+  },
+  removeManagementPosition(id: string) {
+    return apiClient.request(`/api/hierarchy/management-positions/${id}`, { method: 'DELETE' })
+  },
+  setOperationsManagementParent(reportingLineId: string, managementHierarchyPositionId: string | null) {
+    return apiClient.request(`/api/hierarchy/operations-manager-placements/${reportingLineId}/management-parent`, {
+      method: 'PATCH', body: JSON.stringify({ managementHierarchyPositionId }),
+    })
   },
 }

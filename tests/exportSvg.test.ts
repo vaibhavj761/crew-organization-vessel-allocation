@@ -3,6 +3,18 @@ import { sampleData } from '../src/data/sampleData'
 import { generateExportSvg } from '../src/utils/exportSvg'
 
 describe('SVG export', () => {
+  it('includes configurable management layers in the organization export', () => {
+    const data = structuredClone(sampleData)
+    data.crewDirectors[0].managementPositions = [{
+      id: 'position-1', crewDirectorId: data.crewDirectors[0].id, parentPositionId: '', levelId: 'level-1', levelName: 'Head of Crew Management', sortOrder: 1,
+      person: { id: 'person-head', name: 'Executive Head', designation: 'Head of Crew Management', workflowRole: 'HIERARCHY_MANAGER', email: '', phone: '', notes: '' },
+    }]
+    data.operationsManagers[0].managementHierarchyPositionId = 'position-1'
+    const svg = generateExportSvg(data, { kind: 'full' })
+    expect(svg).toContain('HEAD OF CREW MANAGEMENT')
+    expect(svg).toContain('Executive Head')
+  })
+
   it('exports full overview as a native 16:9 SVG', () => {
     const svg = generateExportSvg(sampleData, { kind: 'full' })
     expect(svg).toContain('viewBox="0 0 1920 1080"')

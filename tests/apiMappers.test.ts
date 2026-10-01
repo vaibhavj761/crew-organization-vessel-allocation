@@ -7,6 +7,27 @@ import {
 } from '../src/state/apiMappers'
 
 describe('api mappers', () => {
+  it('maps configurable management levels and the exact Operations Manager parent placement', () => {
+    const mapped = mapHierarchyResponseToChartState({
+      crewDirectors: [{
+        id: 'director-1',
+        person: { id: 'person-director', name: 'Amit Kumar', designation: 'Crew Director' },
+        managementPositions: [{
+          id: 'position-1', crewDirectorId: 'director-1', parentPositionId: null, levelId: 'level-1', levelName: 'Head of Crew Management', sortOrder: 1,
+          person: { id: 'person-head', name: 'New Head', designation: 'Head of Crew Management' },
+        }],
+        operationsManagers: [{
+          id: 'operations-1', reportingLineId: 'operations-line-1', managementHierarchyPositionId: 'position-1',
+          person: { id: 'person-operations', name: 'Reynald Castro', designation: 'Crew Operations Manager' }, deputyManagers: [],
+        }],
+      }],
+    })
+
+    expect(mapped.crewDirectors[0].managementPositions?.[0]).toMatchObject({ id: 'position-1', levelName: 'Head of Crew Management', parentPositionId: '' })
+    expect(mapped.crewDirectors[0].managementPositions?.[0].person.workflowRole).toBe('HIERARCHY_MANAGER')
+    expect(mapped.operationsManagers[0].managementHierarchyPositionId).toBe('position-1')
+  })
+
   it('maps operations managers with nested deputy and crew managers while preserving backend ids', () => {
     const mapped = mapHierarchyResponseToChartState({
       crewDirectors: [{

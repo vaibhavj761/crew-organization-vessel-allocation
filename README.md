@@ -57,10 +57,13 @@ Use the **Chart editor** panel on the left for full hierarchy changes. Admin and
 
 ### Add hierarchy levels and vessels
 
-1. Open **Crew hierarchy** to add Crew Operations Managers, Deputy Managers, and Crew Managers.
-2. Select **Vessel Master** in the top navigation.
-3. Add or edit vessels in the table and select the responsible Crew Manager.
-4. Use search and filters to focus on an operations group, status, or management type.
+1. Open **Organization Chart** and use the layers-plus action below a Crew Director to insert a configurable management level.
+2. Enter the level name, person and designation. Keep **Place current direct reports beneath this new position** selected when inserting a layer between the Director and the existing structure.
+3. Use the layers-plus action on any configurable position to add further nested levels. Use its person-plus action to add an Operations Manager directly beneath that position.
+4. Existing Crew Operations Manager, Deputy Manager and Crew Manager controls continue to work normally below the configurable levels.
+5. Select **Vessel Master** to add or edit vessels and select the responsible Crew Manager.
+
+Configurable levels affect reporting structure only. They do not copy or move vessel allocations. Admin and Editor users can manage them; Viewer users see the hierarchy without edit controls.
 
 ### Export for PowerPoint
 

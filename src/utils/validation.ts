@@ -1,5 +1,5 @@
 import { z } from 'zod'
-const role = z.enum(['CREW_DIRECTOR','OPERATIONS_MANAGER','DEPUTY_MANAGER','CREW_MANAGER','ASSISTANT'])
+const role = z.enum(['CREW_DIRECTOR','HIERARCHY_MANAGER','OPERATIONS_MANAGER','DEPUTY_MANAGER','CREW_MANAGER','ASSISTANT'])
 const person = z.object({ id:z.string().min(1), name:z.string(), designation:z.string(), workflowRole:role, email:z.string(), phone:z.string(), notes:z.string() })
 const crewDirector = z.object({ id:z.string().min(1), sortOrder:z.number().int().positive(), person:person.extend({workflowRole:z.literal('CREW_DIRECTOR')}) })
 const crewManager = z.object({ id:z.string().min(1), sortOrder:z.number().int().positive(), person:person.extend({workflowRole:z.literal('CREW_MANAGER')}), vesselIds:z.array(z.string()) })

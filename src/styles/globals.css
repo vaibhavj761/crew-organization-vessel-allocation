@@ -845,7 +845,7 @@ button:disabled { cursor: not-allowed; opacity: .35; }
 .hierarchy-root-add { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: 31px; border: 1px solid #9db7c7; border-radius: 8px; padding: 5px 10px; background: #fff; color: #214c68; font-size: 11px; font-weight: 800; cursor: pointer; }
 .hierarchy-root-add:hover,.hierarchy-root-add:focus-visible { border-color: #4d87a8; background: #eaf3f8; outline: 2px solid rgba(75,136,170,.2); outline-offset: 2px; }
 .hierarchy-card-actions { position: relative; margin: 0 auto; }
-.hierarchy-card-actions--director > .hierarchy-add-button { position: absolute; right: -12px; bottom: -10px; z-index: 4; }
+.director-hierarchy-actions { position: absolute; right: -42px; bottom: -10px; z-index: 4; display: flex; gap: 6px; }
 .hierarchy-heading-actions { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; }
 .operations-heading > .hierarchy-heading-actions { min-width: auto; flex-direction: row; }
 .deputy-heading > .hierarchy-heading-actions { grid-row: 1 / span 2; grid-column: 3; align-self: center; }
@@ -855,6 +855,35 @@ button:disabled { cursor: not-allowed; opacity: .35; }
 .record-dialog-overlay { position: fixed; inset: 0; z-index: 4100; display: grid; place-items: center; padding: 24px; background: rgba(7,24,39,.58); backdrop-filter: blur(5px); }
 .record-dialog { width: min(100%,760px); max-height: min(92vh,900px); overflow: auto; border: 1px solid #c7d5de; border-radius: 16px; background: #fff; box-shadow: 0 28px 80px rgba(7,31,52,.3); animation: inline-person-enter .16s ease-out; }
 .hierarchy-create-dialog { width: min(100%,600px); }
+.management-hierarchy-tree { position: relative; display: flex; justify-content: center; gap: 16px; margin: 14px auto 18px; padding-top: 18px; width: min(96%, 1220px); }
+.management-hierarchy-tree::before { content: ''; position: absolute; top: 0; left: 50%; width: 2px; height: 18px; background: #9bb2c0; }
+.management-branch { position: relative; display: flex; min-width: 0; flex: 1 1 280px; flex-direction: column; align-items: center; }
+.management-position-card { position: relative; width: min(100%, 390px); min-height: 92px; padding: 14px 16px 12px; border: 1px solid #83a7bb; border-top: 4px solid #397a9e; border-radius: 11px; color: #102f48; background: linear-gradient(180deg,#fff 0%,#f4f8fa 100%); box-shadow: 0 7px 18px rgba(11,36,71,.1); text-align: center; }
+.management-position-card::before { content: ''; position: absolute; left: 50%; top: -22px; width: 2px; height: 18px; background: #9bb2c0; }
+.management-position-card__level { display: block; margin-bottom: 4px; color: #397697; font-size: 9px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+.management-position-card > strong { display: block; font-size: 15px; line-height: 1.2; }
+.management-position-card > small { display: block; margin-top: 3px; color: #577084; font-size: 10px; }
+.management-position-card__count { display: inline-flex; margin-top: 8px; padding: 3px 7px; border-radius: 999px; color: #3f677f; background: #e2edf3; font-size: 8px; font-weight: 800; }
+.management-position-card__actions { position: absolute; right: 7px; top: 7px; display: flex; gap: 4px; }
+.management-position-card__actions button { min-width: 25px; height: 25px; display: inline-flex; align-items: center; justify-content: center; gap: 0; border: 1px solid #c4d4dd; border-radius: 999px; color: #285b78; background: #fff; cursor: pointer; }
+.management-position-card__actions button:hover,.management-position-card__actions button:focus-visible { border-color: #518aa8; background: #e8f2f7; outline: 2px solid rgba(75,136,170,.2); }
+.management-position-card__actions button:last-child { color: #a33b35; }
+.management-position-card__actions button:disabled { color: #93a3ad; background: #eef2f4; cursor: not-allowed; }
+.management-position-card__reports { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.management-position-card__reports span { max-width: 180px; overflow: hidden; padding: 3px 7px; border: 1px solid #d5e1e7; border-radius: 6px; color: #47687c; background: #fff; font-size: 8px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.management-position-card--drop-ready { outline: 2px dashed #397a9e; outline-offset: 4px; }
+.management-position-card--drop-ready::after { content: 'Drop Operations Manager here'; position: absolute; left: 50%; bottom: -14px; z-index: 2; padding: 3px 7px; border-radius: 999px; color: #fff; background: #246487; font-size: 7px; font-weight: 850; white-space: nowrap; transform: translateX(-50%); }
+.management-children { position: relative; display: flex; justify-content: center; align-items: flex-start; gap: 14px; width: 100%; margin-top: 22px; padding-top: 17px; }
+.management-children::before { content: ''; position: absolute; left: 12%; right: 12%; top: 0; height: 2px; background: #afc1cc; }
+.management-children > .management-branch::before { content: ''; position: absolute; left: 50%; top: -17px; width: 2px; height: 17px; background: #afc1cc; }
+.management-tree-warning { padding: 8px; color: #8b2f2b; font-size: 10px; }
+.operations-reporting-path { display: block; margin-top: 3px; color: #b9d6e7; font-size: 8px; font-weight: 700; }
+.management-adopt-option { display: flex !important; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #cddde5; border-radius: 9px; color: #173b54; background: #f2f7fa; text-transform: none !important; letter-spacing: 0 !important; }
+.management-adopt-option input { width: 17px !important; height: 17px; margin-top: 2px; }
+.management-adopt-option span { display: grid; gap: 3px; }
+.management-adopt-option strong { font-size: 11px; }
+.management-adopt-option small { color: #637b8d; font-size: 9px; line-height: 1.4; }
+.record-dialog__intro { display: flex; align-items: center; gap: 7px; }
 .record-dialog > header { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; border-bottom: 1px solid #dfe7ec; background: linear-gradient(180deg,#fbfcfd,#f2f6f8); }
 .record-dialog > header span { display: block; margin-bottom: 4px; color: #54778d; font-size: 10px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
 .record-dialog > header h2 { margin: 0; color: #102f49; font-size: 22px; letter-spacing: -.015em; }
@@ -970,6 +999,10 @@ button:disabled { cursor: not-allowed; opacity: .35; }
   .org-director-section > .director-row .hierarchy-card-actions--director { width: min(48%,410px); }
 }
 @media (max-width: 760px) {
+  .director-hierarchy-actions { right: -10px; }
+  .management-hierarchy-tree,.management-children { flex-direction: column; align-items: stretch; }
+  .management-branch,.management-position-card { width: 100%; }
+  .management-children::before { left: 50%; right: auto; width: 2px; height: 17px; }
   .chart-view--compact-top { padding: 16px; }
   .org-operations-grid { grid-template-columns: 1fr; }
   .org-director-section > .director-row .hierarchy-card-actions--director { width: min(74%,410px); }

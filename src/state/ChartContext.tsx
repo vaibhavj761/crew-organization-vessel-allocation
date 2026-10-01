@@ -68,7 +68,24 @@ interface ChartContextValue {
   removeCrewManagerPlacement: (reportingLineId: string) => Promise<void>
   removeDeputyManagerPlacement: (reportingLineId: string) => Promise<void>
   removeOperationsManagerPlacement: (reportingLineId: string) => Promise<void>
+  createManagementPosition: (payload: ManagementPositionPayload) => Promise<void>
+  updateManagementPosition: (id: string, payload: Partial<ManagementPositionPayload>) => Promise<void>
+  moveManagementPosition: (id: string, parentPositionId: string | null) => Promise<void>
+  removeManagementPosition: (id: string) => Promise<void>
+  setOperationsManagementParent: (reportingLineId: string, positionId: string | null) => Promise<void>
   refreshWorkspaceData: (reason: WorkspaceRefreshReason) => Promise<void>
+}
+
+export type ManagementPositionPayload = {
+  crewDirectorId: string
+  parentPositionId?: string | null
+  levelName: string
+  name: string
+  designation: string
+  email?: string
+  phone?: string
+  notes?: string
+  adoptDirectReports?: boolean
 }
 
 export type HierarchyPlacementPayload = {
@@ -87,7 +104,7 @@ export type HierarchyPersonTarget =
 
 export type HierarchyCreateTarget =
   | { kind: 'crewDirector' }
-  | { kind: 'operationsManager'; crewDirectorId: string }
+  | { kind: 'operationsManager'; crewDirectorId: string; managementHierarchyPositionId?: string }
   | { kind: 'deputyManager'; operationsManagerId: string; operationsManagerReportingLineId?: string }
   | { kind: 'crewManager'; deputyManagerId: string; deputyManagerReportingLineId?: string }
 
@@ -504,7 +521,7 @@ export function ChartProvider({ children }: { children: ReactNode }) {
         await hierarchyApi.createCrewDirector({ ...payload, workflowRole: 'CREW_DIRECTOR', sortOrder: data.crewDirectors.length + 1 } as never)
       } else if (target.kind === 'operationsManager') {
         const siblingCount = data.operationsManagers.filter((item) => item.crewDirectorId === target.crewDirectorId).length
-        await hierarchyApi.createOperationsManager({ ...payload, workflowRole: 'OPERATIONS_MANAGER', crewDirectorId: target.crewDirectorId, sortOrder: siblingCount + 1 } as never)
+        await hierarchyApi.createOperationsManager({ ...payload, workflowRole: 'OPERATIONS_MANAGER', crewDirectorId: target.crewDirectorId, managementHierarchyPositionId: target.managementHierarchyPositionId, sortOrder: siblingCount + 1 } as never)
       } else if (target.kind === 'deputyManager') {
         const parent = data.operationsManagers.find((item) => item.id === target.operationsManagerId)
         await hierarchyApi.createDeputyManager({ ...payload, workflowRole: 'DEPUTY_MANAGER', operationsManagerId: target.operationsManagerId, operationsManagerReportingLineId: target.operationsManagerReportingLineId, sortOrder: (parent?.deputyManagers.length || 0) + 1 } as never)
@@ -552,6 +569,50 @@ export function ChartProvider({ children }: { children: ReactNode }) {
       syncingRef.current = false
     }
   }, [data, loadState, refreshWorkspaceData])
+
+  const runHierarchyWrite = useCallback(async (notice: string, operation: () => Promise<unknown>) => {
+    if (loadState !== 'ready' || syncingRef.current) throw new Error('Please wait for the current workspace operation to finish.')
+    if (snapshotRef.current && !equalJson(snapshotRef.current, data)) throw new Error('Save or refresh your pending edits before changing the hierarchy.')
+    syncingRef.current = true
+    setSaveState('saving')
+    setErrorMessage('')
+    setSyncNotice(notice)
+    try {
+      await operation()
+      apiClient.clearGetRequestCache()
+      await refreshWorkspaceData('save-success')
+      setSaveState('saved')
+      setSyncNotice('Saved to database')
+    } catch (error) {
+      const message = normalizeApiError(error, 'Could not update the organization hierarchy.')
+      setSaveState('error')
+      setErrorMessage(message)
+      setSyncNotice('')
+      throw new Error(message)
+    } finally {
+      syncingRef.current = false
+    }
+  }, [data, loadState, refreshWorkspaceData])
+
+  const createManagementPosition = useCallback((payload: ManagementPositionPayload) => (
+    runHierarchyWrite('Adding management level…', () => hierarchyApi.createManagementPosition(payload))
+  ), [runHierarchyWrite])
+
+  const updateManagementPosition = useCallback((id: string, payload: Partial<ManagementPositionPayload>) => (
+    runHierarchyWrite('Updating management level…', () => hierarchyApi.updateManagementPosition(id, payload))
+  ), [runHierarchyWrite])
+
+  const moveManagementPosition = useCallback((id: string, parentPositionId: string | null) => (
+    runHierarchyWrite('Moving management level…', () => hierarchyApi.moveManagementPosition(id, parentPositionId))
+  ), [runHierarchyWrite])
+
+  const removeManagementPosition = useCallback((id: string) => (
+    runHierarchyWrite('Removing management level…', () => hierarchyApi.removeManagementPosition(id))
+  ), [runHierarchyWrite])
+
+  const setOperationsManagementParent = useCallback((reportingLineId: string, positionId: string | null) => (
+    runHierarchyWrite('Updating reporting line…', () => hierarchyApi.setOperationsManagementParent(reportingLineId, positionId))
+  ), [runHierarchyWrite])
 
   const assignVesselFromChart = useCallback(async (vesselId: string, crewManagerId: string, crewManagerReportingLineId?: string) => {
     if (!vesselId) throw new Error('Select a vessel to assign.')
@@ -676,8 +737,8 @@ export function ChartProvider({ children }: { children: ReactNode }) {
   ), [removeEmptyHierarchyPlacement])
 
   const value = useMemo(
-    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, moveVesselsFromChart, unassignVesselFromChart, saveVesselFromChart, updateHierarchyPlacement, removeCrewManagerPlacement, removeDeputyManagerPlacement, removeOperationsManagerPlacement, refreshWorkspaceData }),
-    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, moveVesselsFromChart, unassignVesselFromChart, saveVesselFromChart, updateHierarchyPlacement, removeCrewManagerPlacement, removeDeputyManagerPlacement, removeOperationsManagerPlacement, refreshWorkspaceData],
+    () => ({ data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, moveVesselsFromChart, unassignVesselFromChart, saveVesselFromChart, updateHierarchyPlacement, removeCrewManagerPlacement, removeDeputyManagerPlacement, removeOperationsManagerPlacement, createManagementPosition, updateManagementPosition, moveManagementPosition, removeManagementPosition, setOperationsManagementParent, refreshWorkspaceData }),
+    [data, dispatch, saveState, hasUnsavedChanges, loadState, errorMessage, syncNotice, saveChanges, saveHierarchyPerson, createHierarchyPerson, createVesselRecord, assignVesselFromChart, moveVesselsFromChart, unassignVesselFromChart, saveVesselFromChart, updateHierarchyPlacement, removeCrewManagerPlacement, removeDeputyManagerPlacement, removeOperationsManagerPlacement, createManagementPosition, updateManagementPosition, moveManagementPosition, removeManagementPosition, setOperationsManagementParent, refreshWorkspaceData],
   )
 
   return <ChartContext.Provider value={value}>{children}</ChartContext.Provider>

@@ -64,6 +64,35 @@ const bulkAllocationSchema = z.object({
   crewManagerReportingLineId: z.string().trim().min(1, 'Select a destination reporting path.'),
 })
 
+const managementPositionPersonSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required.').max(160),
+  designation: z.string().trim().min(1, 'Designation is required.').max(160),
+  email: z.string().trim().email('Enter a valid email address.').or(z.literal('')).optional(),
+  phone: z.string().trim().max(80).optional(),
+  notes: z.string().trim().max(2000).optional(),
+})
+
+const managementPositionCreateSchema = managementPositionPersonSchema.extend({
+  crewDirectorId: z.string().trim().min(1),
+  parentPositionId: z.string().trim().min(1).nullable().optional(),
+  levelName: z.string().trim().min(1, 'Level name is required.').max(120),
+  sortOrder: z.number().int().min(0).optional(),
+  adoptDirectReports: z.boolean().optional().default(true),
+})
+
+const managementPositionUpdateSchema = managementPositionPersonSchema.partial().extend({
+  levelName: z.string().trim().min(1, 'Level name is required.').max(120).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+})
+
+const managementPositionMoveSchema = z.object({
+  parentPositionId: z.string().trim().min(1).nullable(),
+})
+
+const operationsManagementParentSchema = z.object({
+  managementHierarchyPositionId: z.string().trim().min(1).nullable(),
+})
+
 export async function organizationRoutes(app: FastifyInstance) {
   app.get('/api/organization', async (request, reply) => {
     const user = await requireCurrentUser(request, reply)
@@ -126,6 +155,190 @@ export async function organizationRoutes(app: FastifyInstance) {
     return reply.send(hierarchy)
   })
 
+  app.post('/api/hierarchy/management-positions', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const parsed = managementPositionCreateSchema.safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid hierarchy position.'))
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+
+    const director = await prisma.crewDirector.findFirst({ where: { id: parsed.data.crewDirectorId, organizationId: organization.id } })
+    if (!director) return notFound(reply, 'Crew Director not found')
+    if (parsed.data.parentPositionId) {
+      const parent = await prisma.managementHierarchyPosition.findFirst({
+        where: { id: parsed.data.parentPositionId, organizationId: organization.id, crewDirectorId: director.id },
+      })
+      if (!parent) return badRequest(reply, 'The selected parent position is not in this Crew Director branch.')
+    }
+
+    const position = await prisma.$transaction(async (tx) => {
+      let level = await tx.managementHierarchyLevel.findUnique({
+        where: { organizationId_name: { organizationId: organization.id, name: parsed.data.levelName } },
+      })
+      if (!level) {
+        const levelCount = await tx.managementHierarchyLevel.count({ where: { organizationId: organization.id } })
+        level = await tx.managementHierarchyLevel.create({
+          data: { organizationId: organization.id, name: parsed.data.levelName, sortOrder: levelCount + 1 },
+        })
+      }
+      const person = await tx.person.create({
+        data: {
+          organizationId: organization.id,
+          name: parsed.data.name,
+          designation: parsed.data.designation,
+          workflowRole: 'HIERARCHY_MANAGER',
+          email: parsed.data.email || null,
+          phone: parsed.data.phone || null,
+          notes: parsed.data.notes || null,
+        },
+      })
+      const createdPosition = await tx.managementHierarchyPosition.create({
+        data: {
+          organizationId: organization.id,
+          crewDirectorId: director.id,
+          levelId: level.id,
+          personId: person.id,
+          parentPositionId: parsed.data.parentPositionId ?? null,
+          sortOrder: parsed.data.sortOrder ?? 0,
+        },
+        include: { person: true, level: true },
+      })
+
+      if (parsed.data.adoptDirectReports) {
+        await tx.managementHierarchyPosition.updateMany({
+          where: parsed.data.parentPositionId
+            ? { organizationId: organization.id, crewDirectorId: director.id, parentPositionId: parsed.data.parentPositionId, id: { not: createdPosition.id } }
+            : { organizationId: organization.id, crewDirectorId: director.id, parentPositionId: null, id: { not: createdPosition.id } },
+          data: { parentPositionId: createdPosition.id },
+        })
+        await tx.operationsManagerReportingLine.updateMany({
+          where: parsed.data.parentPositionId
+            ? { organizationId: organization.id, crewDirectorId: director.id, managementHierarchyPositionId: parsed.data.parentPositionId }
+            : { organizationId: organization.id, crewDirectorId: director.id, managementHierarchyPositionId: null },
+          data: { managementHierarchyPositionId: createdPosition.id },
+        })
+      }
+      return createdPosition
+    })
+
+    await writeAuditLog({ userId: user.id, action: 'hierarchy.management-position.create', entityType: 'ManagementHierarchyPosition', entityId: position.id, afterJson: position, ipAddress: requestIp(request) })
+    return created(reply, position)
+  })
+
+  app.patch('/api/hierarchy/management-positions/:id', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const { id } = request.params as { id: string }
+    const parsed = managementPositionUpdateSchema.safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid hierarchy position.'))
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+    const current = await prisma.managementHierarchyPosition.findFirst({ where: { id, organizationId: organization.id }, include: { person: true, level: true } })
+    if (!current) return notFound(reply, 'Hierarchy position not found')
+
+    const updated = await prisma.$transaction(async (tx) => {
+      let levelId = current.levelId
+      if (parsed.data.levelName && parsed.data.levelName !== current.level.name) {
+        const existingLevel = await tx.managementHierarchyLevel.findUnique({
+          where: { organizationId_name: { organizationId: organization.id, name: parsed.data.levelName } },
+        })
+        const level = existingLevel ?? await tx.managementHierarchyLevel.create({
+          data: { organizationId: organization.id, name: parsed.data.levelName, sortOrder: current.level.sortOrder },
+        })
+        levelId = level.id
+      }
+      await tx.person.update({
+        where: { id: current.personId },
+        data: {
+          ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+          ...(parsed.data.designation !== undefined ? { designation: parsed.data.designation } : {}),
+          ...(parsed.data.email !== undefined ? { email: parsed.data.email || null } : {}),
+          ...(parsed.data.phone !== undefined ? { phone: parsed.data.phone || null } : {}),
+          ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes || null } : {}),
+        },
+      })
+      return tx.managementHierarchyPosition.update({
+        where: { id },
+        data: { levelId, ...(parsed.data.sortOrder !== undefined ? { sortOrder: parsed.data.sortOrder } : {}) },
+        include: { person: true, level: true },
+      })
+    })
+    await writeAuditLog({ userId: user.id, action: 'hierarchy.management-position.update', entityType: 'ManagementHierarchyPosition', entityId: id, beforeJson: current, afterJson: updated, ipAddress: requestIp(request) })
+    return reply.send(updated)
+  })
+
+  app.post('/api/hierarchy/management-positions/:id/move', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const { id } = request.params as { id: string }
+    const parsed = managementPositionMoveSchema.safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid hierarchy destination.'))
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+    const positions = await prisma.managementHierarchyPosition.findMany({ where: { organizationId: organization.id } })
+    const current = positions.find((position) => position.id === id)
+    if (!current) return notFound(reply, 'Hierarchy position not found')
+    if (parsed.data.parentPositionId === id) return badRequest(reply, 'A position cannot report to itself.')
+    const parent = parsed.data.parentPositionId ? positions.find((position) => position.id === parsed.data.parentPositionId) : null
+    if (parsed.data.parentPositionId && (!parent || parent.crewDirectorId !== current.crewDirectorId)) {
+      return badRequest(reply, 'The selected parent must be in the same Crew Director branch.')
+    }
+    let cursor = parent
+    const visited = new Set<string>()
+    while (cursor) {
+      if (cursor.id === current.id) return badRequest(reply, 'This move would create a circular reporting line.')
+      if (visited.has(cursor.id)) return badRequest(reply, 'The hierarchy already contains a circular reporting line.')
+      visited.add(cursor.id)
+      cursor = cursor.parentPositionId ? positions.find((position) => position.id === cursor?.parentPositionId) : undefined
+    }
+    const updated = await prisma.managementHierarchyPosition.update({ where: { id }, data: { parentPositionId: parsed.data.parentPositionId } })
+    await writeAuditLog({ userId: user.id, action: 'hierarchy.management-position.move', entityType: 'ManagementHierarchyPosition', entityId: id, beforeJson: current, afterJson: updated, ipAddress: requestIp(request) })
+    return reply.send({ success: true, position: updated })
+  })
+
+  app.delete('/api/hierarchy/management-positions/:id', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const { id } = request.params as { id: string }
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+    const position = await prisma.managementHierarchyPosition.findFirst({
+      where: { id, organizationId: organization.id },
+      include: { person: true, children: { select: { id: true }, take: 1 }, operationsManagerReportingLines: { select: { id: true }, take: 1 } },
+    })
+    if (!position) return notFound(reply, 'Hierarchy position not found')
+    if (position.children.length || position.operationsManagerReportingLines.length) {
+      return badRequest(reply, 'Move this position’s direct reports before removing it from the organization chart.')
+    }
+    await prisma.managementHierarchyPosition.delete({ where: { id } })
+    await writeAuditLog({ userId: user.id, action: 'hierarchy.management-position.remove', entityType: 'ManagementHierarchyPosition', entityId: id, beforeJson: position, afterJson: { removedFromChart: true, employeeRetained: true }, ipAddress: requestIp(request) })
+    return reply.send({ success: true, employeeRetained: true, personName: position.person.name })
+  })
+
+  app.patch('/api/hierarchy/operations-manager-placements/:id/management-parent', async (request, reply) => {
+    const user = await ensureAuthorizedWrite(request, reply)
+    if (!user) return
+    const { id } = request.params as { id: string }
+    const parsed = operationsManagementParentSchema.safeParse(request.body)
+    if (!parsed.success) return badRequest(reply, firstZodMessage(parsed.error, 'Invalid management parent.'))
+    const organization = await getPrimaryOrganization()
+    if (!organization) return notFound(reply, 'Organization not configured')
+    const line = await prisma.operationsManagerReportingLine.findFirst({ where: { id, organizationId: organization.id } })
+    if (!line) return notFound(reply, 'Operations Manager reporting placement not found')
+    if (parsed.data.managementHierarchyPositionId) {
+      const parent = await prisma.managementHierarchyPosition.findFirst({
+        where: { id: parsed.data.managementHierarchyPositionId, organizationId: organization.id, crewDirectorId: line.crewDirectorId },
+      })
+      if (!parent) return badRequest(reply, 'The selected management position is not in this Crew Director branch.')
+    }
+    const updated = await prisma.operationsManagerReportingLine.update({
+      where: { id }, data: { managementHierarchyPositionId: parsed.data.managementHierarchyPositionId },
+    })
+    await writeAuditLog({ userId: user.id, action: 'hierarchy.operations-manager.reparent', entityType: 'OperationsManagerReportingLine', entityId: id, beforeJson: line, afterJson: updated, ipAddress: requestIp(request) })
+    return reply.send({ success: true, reportingLine: updated })
+  })
+
   app.post('/api/hierarchy/placements', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
@@ -158,9 +371,9 @@ export async function organizationRoutes(app: FastifyInstance) {
             await tx.operationsManagerReportingLine.delete({ where: { id: existingLine.id } })
           }
           if (primaryLine) {
-            await tx.operationsManagerReportingLine.update({
-              where: { id: primaryLine.id },
-              data: { crewDirectorId: parent.id, isPrimary: true },
+          await tx.operationsManagerReportingLine.update({
+            where: { id: primaryLine.id },
+            data: { crewDirectorId: parent.id, managementHierarchyPositionId: null, isPrimary: true },
             })
             await tx.operationsManagerReportingLine.deleteMany({
               where: { operationsManagerId: entity.id, id: { not: primaryLine.id } },
@@ -502,9 +715,10 @@ export async function organizationRoutes(app: FastifyInstance) {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
     const params = request.params as { id: string }
-    const existing = await prisma.crewDirector.findUnique({ where: { id: params.id }, include: { operationsManagers: true, person: true } })
+    const existing = await prisma.crewDirector.findUnique({ where: { id: params.id }, include: { operationsManagers: true, managementHierarchyPositions: true, person: true } })
     if (!existing) return notFound(reply, 'Crew director not found')
     if (existing.operationsManagers.length) return badRequest(reply, 'Move or delete operations managers before deleting this crew director')
+    if (existing.managementHierarchyPositions.length) return badRequest(reply, 'Remove configurable management positions before deleting this crew director')
     await prisma.crewDirector.delete({ where: { id: existing.id } })
     await writeAuditLog({ userId: user.id, action: 'crewDirector.delete', entityType: 'CrewDirector', entityId: existing.id, beforeJson: existing, ipAddress: requestIp(request) })
     return noContent(reply)
@@ -513,13 +727,17 @@ export async function organizationRoutes(app: FastifyInstance) {
   app.post('/api/operations-managers', async (request, reply) => {
     const user = await ensureAuthorizedWrite(request, reply)
     if (!user) return
-    const parsed = personSchema.extend({ crewDirectorId: z.string().min(1) }).safeParse(request.body)
+    const parsed = personSchema.extend({ crewDirectorId: z.string().min(1), managementHierarchyPositionId: z.string().min(1).optional() }).safeParse(request.body)
     if (!parsed.success) return badRequest(reply, 'Invalid operations manager payload', parsed.error.flatten())
     const org = await getPrimaryOrganization()
     if (!org) return notFound(reply, 'Organization not configured')
     if (parsed.data.workflowRole !== 'OPERATIONS_MANAGER') return badRequest(reply, 'workflowRole must be OPERATIONS_MANAGER')
     const parentDirector = await prisma.crewDirector.findUnique({ where: { id: parsed.data.crewDirectorId } })
     if (!parentDirector) return notFound(reply, 'Crew director not found')
+    if (parsed.data.managementHierarchyPositionId) {
+      const hierarchyParent = await prisma.managementHierarchyPosition.findFirst({ where: { id: parsed.data.managementHierarchyPositionId, organizationId: org.id, crewDirectorId: parentDirector.id } })
+      if (!hierarchyParent) return badRequest(reply, 'The selected management position is not in this Crew Director branch.')
+    }
     const createdManager = await prisma.$transaction(async (tx) => {
       const person = await tx.person.create({ data: { organizationId: parsed.data.organizationId, name: parsed.data.name, designation: parsed.data.designation, workflowRole: parsed.data.workflowRole, email: parsed.data.email || null, phone: parsed.data.phone || null, notes: parsed.data.notes || null } })
       const manager = await tx.operationsManager.create({
@@ -527,7 +745,7 @@ export async function organizationRoutes(app: FastifyInstance) {
         include: { person: true },
       })
       await tx.operationsManagerReportingLine.create({
-        data: { organizationId: org.id, operationsManagerId: manager.id, crewDirectorId: parentDirector.id, isPrimary: true },
+        data: { organizationId: org.id, operationsManagerId: manager.id, crewDirectorId: parentDirector.id, managementHierarchyPositionId: parsed.data.managementHierarchyPositionId, isPrimary: true },
       })
       return manager
     })
@@ -550,7 +768,7 @@ export async function organizationRoutes(app: FastifyInstance) {
         if (primaryLine) {
           await tx.operationsManagerReportingLine.update({
             where: { id: primaryLine.id },
-            data: { crewDirectorId: parsed.data.crewDirectorId, isPrimary: true },
+            data: { crewDirectorId: parsed.data.crewDirectorId, managementHierarchyPositionId: null, isPrimary: true },
           })
         } else {
           await tx.operationsManagerReportingLine.create({

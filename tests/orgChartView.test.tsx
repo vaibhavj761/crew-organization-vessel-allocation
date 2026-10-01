@@ -152,6 +152,20 @@ describe('OrgChartView deterministic layout', () => {
     expect(screen.getByText('No Crew Managers assigned yet')).toBeInTheDocument()
   })
 
+  it('renders a configurable management layer between Director and Operations Manager', () => {
+    chartDataMock.current = makeChartData(1)
+    chartDataMock.current.crewDirectors[0].managementPositions = [{
+      id: 'management-position-1', crewDirectorId: 'director-qa', parentPositionId: '', levelId: 'level-1', levelName: 'Head of Crew Management', sortOrder: 1,
+      person: { id: 'management-person-1', name: 'QA Management Head', designation: 'Head of Crew Management', workflowRole: 'HIERARCHY_MANAGER', email: '', phone: '', notes: '' },
+    }]
+    chartDataMock.current.operationsManagers[0].managementHierarchyPositionId = 'management-position-1'
+    render(<OrgChartView />)
+
+    expect(screen.getAllByText('Head of Crew Management')).toHaveLength(2)
+    expect(screen.getByText('QA Management Head')).toBeInTheDocument()
+    expect(screen.getByText('Reports to QA Management Head')).toBeInTheDocument()
+  })
+
   it('shows assigned vessel names from the crew-manager count in the organization chart', () => {
     chartDataMock.current = makeChartData(1)
     chartDataMock.current.vessels = [{

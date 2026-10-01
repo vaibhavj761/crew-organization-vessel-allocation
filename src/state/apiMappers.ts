@@ -1,12 +1,13 @@
-import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, OperationsManagerNode, Person, Vessel } from '../types'
+import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, ManagementHierarchyPositionNode, OperationsManagerNode, Person, Vessel } from '../types'
 
 type NullableString = string | null | undefined
 type RawPerson = Partial<Person> & { id?: string }
 type RawPlacement = { reportingLineId?: string; isPrimaryReportingLine?: boolean }
 type RawCrewManager = RawPlacement & { id?: string; deputyManagerId?: string; primaryDeputyManagerId?: string; deputyManagerIds?: string[]; person?: RawPerson; vessels?: Array<{ id?: string }> }
 type RawDeputyManager = RawPlacement & { id?: string; operationsManagerId?: string; primaryOperationsManagerId?: string; operationsManagerIds?: string[]; person?: RawPerson; crewManagers?: RawCrewManager[] }
-type RawOperationsManager = RawPlacement & { id?: string; crewDirectorId?: string; primaryCrewDirectorId?: string; crewDirectorIds?: string[]; person?: RawPerson; deputyManagers?: RawDeputyManager[]; crewManagers?: RawCrewManager[] }
-type RawCrewDirector = { id?: string; person?: RawPerson; operationsManagers?: RawOperationsManager[] }
+type RawOperationsManager = RawPlacement & { id?: string; crewDirectorId?: string; primaryCrewDirectorId?: string; crewDirectorIds?: string[]; managementHierarchyPositionId?: string | null; person?: RawPerson; deputyManagers?: RawDeputyManager[]; crewManagers?: RawCrewManager[] }
+type RawManagementPosition = { id?: string; crewDirectorId?: string; parentPositionId?: string | null; levelId?: string; levelName?: string; sortOrder?: number; person?: RawPerson }
+type RawCrewDirector = { id?: string; person?: RawPerson; managementPositions?: RawManagementPosition[]; operationsManagers?: RawOperationsManager[] }
 type RawHierarchyResponse = { crewDirectors?: RawCrewDirector[] } | null | undefined
 type RawVesselAllocation = {
   crewManagerId?: string
@@ -84,6 +85,7 @@ function mapOperationsManager(raw: RawOperationsManager, sortOrder: number): Ope
     primaryCrewDirectorId: raw.primaryCrewDirectorId,
     crewDirectorId: raw?.crewDirectorId || '',
     crewDirectorIds: raw.crewDirectorIds || (raw.crewDirectorId ? [raw.crewDirectorId] : []),
+    managementHierarchyPositionId: raw.managementHierarchyPositionId || undefined,
     sortOrder,
     person: mapPerson(raw?.person, 'OPERATIONS_MANAGER', raw?.person?.id || raw?.id || `operations-manager-${sortOrder}`, raw?.person?.name || 'New Operations Manager', raw?.person?.designation || 'Crew Operations Manager'),
     deputyManagers: (raw.deputyManagers || legacyCrewManagers).map((deputyManager, index) => mapDeputyManager({ ...deputyManager, operationsManagerId: raw?.id || `operations-manager-${sortOrder}` }, index + 1)),
@@ -91,10 +93,20 @@ function mapOperationsManager(raw: RawOperationsManager, sortOrder: number): Ope
 }
 
 function mapCrewDirector(raw: RawCrewDirector, sortOrder: number): CrewDirectorNode {
+  const directorId = raw?.id || `crew-director-${sortOrder}`
   return {
-    id: raw?.id || `crew-director-${sortOrder}`,
+    id: directorId,
     sortOrder,
     person: mapPerson(raw?.person, 'CREW_DIRECTOR', raw?.person?.id || raw?.id || `crew-director-${sortOrder}`, raw?.person?.name || 'Crew Director', raw?.person?.designation || 'Crew Director'),
+    managementPositions: (raw.managementPositions || []).map((position, index): ManagementHierarchyPositionNode => ({
+      id: position.id || `management-position-${index + 1}`,
+      crewDirectorId: position.crewDirectorId || directorId,
+      parentPositionId: position.parentPositionId || '',
+      levelId: position.levelId || '',
+      levelName: position.levelName || 'Management level',
+      sortOrder: position.sortOrder ?? index + 1,
+      person: mapPerson(position.person, 'HIERARCHY_MANAGER', position.person?.id || position.id || `management-person-${index + 1}`, position.person?.name || 'New manager', position.person?.designation || position.levelName || 'Manager'),
+    })),
   }
 }
 

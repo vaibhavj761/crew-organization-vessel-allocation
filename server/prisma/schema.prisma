@@ -28,6 +28,7 @@ enum PasswordTokenType {
 
 enum WorkflowRole {
   CREW_DIRECTOR
+  HIERARCHY_MANAGER
   OPERATIONS_MANAGER
   DEPUTY_MANAGER
   CREW_MANAGER
@@ -92,6 +93,8 @@ model Organization {
 
   people               Person[]
   crewDirectors        CrewDirector[]
+  managementHierarchyLevels ManagementHierarchyLevel[]
+  managementHierarchyPositions ManagementHierarchyPosition[]
   operationsManagers    OperationsManager[]
   deputyManagers        DeputyManager[]
   crewManagers          CrewManager[]
@@ -116,6 +119,7 @@ model Person {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   crewDirector CrewDirector?
+  managementHierarchyPosition ManagementHierarchyPosition?
   operationsManager OperationsManager?
   deputyManager DeputyManager?
   crewManager CrewManager?
@@ -136,6 +140,7 @@ model CrewDirector {
   person             Person             @relation(fields: [personId], references: [id], onDelete: Cascade)
   operationsManagers OperationsManager[]
   reportingLines OperationsManagerReportingLine[]
+  managementHierarchyPositions ManagementHierarchyPosition[]
 
   @@index([organizationId, sortOrder])
 }
@@ -202,6 +207,7 @@ model OperationsManagerReportingLine {
   organizationId      String
   operationsManagerId String
   crewDirectorId      String
+  managementHierarchyPositionId String?
   isPrimary           Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -209,10 +215,56 @@ model OperationsManagerReportingLine {
   organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   operationsManager OperationsManager @relation(fields: [operationsManagerId], references: [id], onDelete: Cascade)
   crewDirector     CrewDirector     @relation(fields: [crewDirectorId], references: [id], onDelete: Cascade)
+  managementHierarchyPosition ManagementHierarchyPosition? @relation(fields: [managementHierarchyPositionId], references: [id], onDelete: SetNull)
   deputyReportingLines DeputyManagerReportingLine[]
 
   @@unique([operationsManagerId, crewDirectorId])
   @@index([organizationId, crewDirectorId])
+  @@index([managementHierarchyPositionId])
+}
+
+/// A configurable management level between Crew Director and Operations Manager.
+/// Levels are organization-owned labels (for example "Head of Crew Management")
+/// and can be reused by more than one position.
+model ManagementHierarchyLevel {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  positions    ManagementHierarchyPosition[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, sortOrder])
+}
+
+/// A person occupying a configurable management level. Positions form a
+/// recursive tree, which lets the chart add any number of layers without a
+/// database change for each new title.
+model ManagementHierarchyPosition {
+  id                String   @id @default(cuid())
+  organizationId    String
+  crewDirectorId    String
+  levelId           String
+  personId          String   @unique
+  parentPositionId  String?
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  crewDirector CrewDirector @relation(fields: [crewDirectorId], references: [id], onDelete: Cascade)
+  level        ManagementHierarchyLevel @relation(fields: [levelId], references: [id], onDelete: Restrict)
+  person       Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  parent       ManagementHierarchyPosition? @relation("ManagementHierarchyTree", fields: [parentPositionId], references: [id], onDelete: Restrict)
+  children     ManagementHierarchyPosition[] @relation("ManagementHierarchyTree")
+  operationsManagerReportingLines OperationsManagerReportingLine[]
+
+  @@index([organizationId, crewDirectorId, parentPositionId, sortOrder])
+  @@index([levelId])
 }
 
 model DeputyManagerReportingLine {

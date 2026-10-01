@@ -45,8 +45,8 @@ describe('vessel allocation write security', () => {
   it('scopes copied hierarchy branches to exact placements and keeps vessels on one placement', () => {
     const hierarchy = source('server/src/services/hierarchy.ts')
     const routes = source('server/src/routes/organization.ts')
-    expect(hierarchy).toContain('line.operationsManagerReportingLineId === operationsLine.id')
-    expect(hierarchy).toContain('line.deputyManagerReportingLineId === deputyLine.id')
+    expect(hierarchy).toContain('deputyLinesByOperationsPlacement.get(operationsLine.id)')
+    expect(hierarchy).toContain('crewLinesByDeputyPlacement.get(deputyLine.id)')
     expect(hierarchy).toContain('vessels: vesselsByCrewManagerPlacement.get(crewLine.id)')
     expect(routes).toContain('crewManagerReportingLineId: reportingLine.id')
     expect(routes).toContain('operationsManagerReportingLineId: parentPlacement.id')
@@ -82,5 +82,18 @@ describe('vessel allocation write security', () => {
     expect(deputyRoute).toContain('crewReportingLines.length')
     expect(operationsRoute).not.toContain('operationsManager.delete')
     expect(deputyRoute).not.toContain('deputyManager.delete')
+  })
+
+  it('guards configurable hierarchy writes and prevents circular reporting lines', () => {
+    const routes = source('server/src/routes/organization.ts')
+    const start = routes.indexOf("app.post('/api/hierarchy/management-positions'")
+    const end = routes.indexOf("app.post('/api/hierarchy/placements'", start)
+    const configurableHierarchy = routes.slice(start, end)
+
+    expect(start).toBeGreaterThan(-1)
+    expect(configurableHierarchy.match(/ensureAuthorizedWrite\(request, reply\)/g)?.length).toBeGreaterThanOrEqual(5)
+    expect(configurableHierarchy).toContain('This move would create a circular reporting line.')
+    expect(configurableHierarchy).toContain('employeeRetained: true')
+    expect(configurableHierarchy).toContain('Move this position’s direct reports before removing it')
   })
 })

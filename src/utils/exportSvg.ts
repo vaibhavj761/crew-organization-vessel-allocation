@@ -1,5 +1,5 @@
 import { APP_NAME } from '../constants/app'
-import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, OperationsManagerNode, ViewMode } from '../types'
+import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, ManagementHierarchyPositionNode, OperationsManagerNode, ViewMode } from '../types'
 import { choosePresentationColumns, EXPORT_HEIGHT, EXPORT_WIDTH, fitToSlide, getPresentationDensity, type PresentationDensity } from './exportLayout'
 import { vesselBelongsToCrewManagerPlacement } from './operationsAllocation'
 
@@ -148,6 +148,42 @@ function identityCard(x: number, y: number, width: number, name: string, designa
   ].join('')
 }
 
+function managementCard(x: number, y: number, width: number, position: ManagementHierarchyPositionNode) {
+  return [
+    `<rect x="${x}" y="${y}" width="${width}" height="58" rx="9" fill="#f8fbfc" stroke="#78a0b7"/>`,
+    `<rect x="${x}" y="${y}" width="5" height="58" rx="2.5" fill="#397a9e"/>`,
+    text(x + 15, y + 15, position.levelName.toUpperCase(), 7.5, 800, '#4a7791', 'start', 'letter-spacing=".55"'),
+    wrappedText(x + 15, y + 34, position.person.name, Math.max(18, Math.floor((width - 30) / 7)), 11, 11, 800, '#17344c', 'start', 1),
+    text(x + 15, y + 50, position.person.designation, 8, 550, '#657e8f'),
+  ].join('')
+}
+
+function managementRows(directors: CrewDirectorNode[]) {
+  const positions = directors.flatMap((director) => director.managementPositions || [])
+  const byId = new Map(positions.map((position) => [position.id, position]))
+  const depthOf = (position: ManagementHierarchyPositionNode) => {
+    let depth = 0
+    let cursor = position
+    const visited = new Set<string>([position.id])
+    while (cursor.parentPositionId) {
+      const parent = byId.get(cursor.parentPositionId)
+      if (!parent || visited.has(parent.id)) break
+      visited.add(parent.id)
+      depth += 1
+      cursor = parent
+    }
+    return depth
+  }
+  const rows = new Map<number, ManagementHierarchyPositionNode[]>()
+  for (const position of positions) {
+    const depth = depthOf(position)
+    const row = rows.get(depth) ?? []
+    row.push(position)
+    rows.set(depth, row)
+  }
+  return [...rows.entries()].sort(([left], [right]) => left - right)
+}
+
 function crewManagerRow(x: number, y: number, width: number, crewManager: CrewManagerNode, vesselCount: number, density: PresentationDensity) {
   const height = density === 'dense' ? 43 : density === 'compact' ? 47 : 52
   const avatar = height - 16
@@ -240,7 +276,8 @@ function renderStructure(data: ChartData, directors: CrewDirectorNode[]) {
   const columnWidth = (CONTENT_WIDTH - (columns - 1) * gap) / columns
   const blocks: OperationsBlock[] = visibleOperations.map((operationsManager) => ({ operationsManager, naturalHeight: structureBlockHeight(operationsManager, density, columnWidth) }))
   const blockRows = rowsOf(blocks, columns)
-  const directorBandHeight = directors.length <= 1 ? 84 : 118
+  const hierarchyRows = managementRows(directors)
+  const directorBandHeight = (directors.length <= 1 ? 84 : 118) + hierarchyRows.length * 70
   const naturalHeight = directorBandHeight + blockRows.reduce((sum, row) => sum + Math.max(...row.map((item) => item.naturalHeight)), 0) + Math.max(0, blockRows.length - 1) * gap
   const scale = fitToSlide(CONTENT_WIDTH, naturalHeight, CONTENT_WIDTH, CONTENT_HEIGHT)
   const scaledWidth = CONTENT_WIDTH * scale
@@ -254,6 +291,13 @@ function renderStructure(data: ChartData, directors: CrewDirectorNode[]) {
     const directorStart = (CONTENT_WIDTH - (directors.length * directorWidth + Math.max(0, directors.length - 1) * 12)) / 2
     directors.forEach((director, index) => {
       body += identityCard(directorStart + index * (directorWidth + 12), 0, directorWidth, director.person.name, director.person.designation, 'director', density)
+    })
+    hierarchyRows.forEach(([, positions], rowIndex) => {
+      const cardWidth = Math.min(310, (CONTENT_WIDTH - Math.max(0, positions.length - 1) * 12) / Math.max(1, positions.length))
+      const rowWidth = positions.length * cardWidth + Math.max(0, positions.length - 1) * 12
+      const rowX = (CONTENT_WIDTH - rowWidth) / 2
+      const rowY = (directors.length <= 1 ? 78 : 112) + rowIndex * 70
+      positions.forEach((position, index) => { body += managementCard(rowX + index * (cardWidth + 12), rowY, cardWidth, position) })
     })
     let rowY = directorBandHeight
     blockRows.forEach((row) => {

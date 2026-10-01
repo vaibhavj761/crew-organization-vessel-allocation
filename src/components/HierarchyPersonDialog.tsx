@@ -8,6 +8,7 @@ import { createId } from '../utils/createId'
 
 const roleDetails: Record<WorkflowRole, { label: string; designation: string }> = {
   CREW_DIRECTOR: { label: 'Crew Director', designation: 'Crew Director' },
+  HIERARCHY_MANAGER: { label: 'Management position', designation: 'Head of Crew Management' },
   OPERATIONS_MANAGER: { label: 'Crew Operations Manager', designation: 'Crew Operations Manager' },
   DEPUTY_MANAGER: { label: 'Deputy Manager', designation: 'Deputy Crew Manager' },
   CREW_MANAGER: { label: 'Crew Manager', designation: 'Crew Manager' },
