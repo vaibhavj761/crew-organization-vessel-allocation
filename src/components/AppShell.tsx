@@ -4,6 +4,7 @@ import { APP_NAME, APP_SHORT_NAME, getPageTitle } from '../constants/app'
 import { useChart } from '../state/ChartContext'
 import type { SafeUser, ViewMode } from '../types'
 import { canExport, isReadOnly } from '../utils/permissions'
+import { getOperationsManagersForManagementPosition } from '../utils/operationsAllocation'
 import { AccessDeniedPage } from './AccessDeniedPage'
 import { AuthShell } from './AuthShell'
 import { ChartErrorBoundary } from './ChartErrorBoundary'
@@ -42,6 +43,7 @@ export function AppShell({
   const [editorOpen, setEditorOpen] = useState(false)
   const [selectedOps, setSelectedOps] = useState('')
   const [selectedDirector, setSelectedDirector] = useState('')
+  const [selectedManagementPosition, setSelectedManagementPosition] = useState('')
   const [selectedDeputy, setSelectedDeputy] = useState('')
   const [selectedCrewManager, setSelectedCrewManager] = useState('')
   const [chartZoom, setChartZoom] = useState(1)
@@ -54,9 +56,13 @@ export function AppShell({
 
   const operationsManagersForDirector = useMemo(
     () => (selectedDirector
-      ? data.operationsManagers.filter((op) => op.crewDirectorId === selectedDirector)
+      ? getOperationsManagersForManagementPosition(data, selectedDirector, selectedManagementPosition)
       : []),
-    [data.operationsManagers, selectedDirector],
+    [data, selectedDirector, selectedManagementPosition],
+  )
+  const managementPositionsForDirector = useMemo(
+    () => data.crewDirectors.find((director) => director.id === selectedDirector)?.managementPositions || [],
+    [data.crewDirectors, selectedDirector],
   )
   const selectedOperationsManager = useMemo(
     () => operationsManagersForDirector.find((op) => op.id === selectedOps) || operationsManagersForDirector[0],
@@ -84,10 +90,15 @@ export function AppShell({
 
   useEffect(() => {
     if (!selectedDirector) {
+      if (selectedManagementPosition) setSelectedManagementPosition('')
       if (selectedOps) setSelectedOps('')
       if (selectedDeputy) setSelectedDeputy('')
       if (selectedCrewManager) setSelectedCrewManager('')
       return
+    }
+
+    if (selectedManagementPosition && !managementPositionsForDirector.some((position) => position.id === selectedManagementPosition)) {
+      setSelectedManagementPosition('')
     }
 
     if (!operationsManagersForDirector.some((op) => op.id === selectedOps)) {
@@ -95,7 +106,7 @@ export function AppShell({
       setSelectedDeputy('')
       setSelectedCrewManager('')
     }
-  }, [operationsManagersForDirector, selectedDirector, selectedOps, selectedDeputy, selectedCrewManager])
+  }, [managementPositionsForDirector, operationsManagersForDirector, selectedDirector, selectedManagementPosition, selectedOps, selectedDeputy, selectedCrewManager])
 
   useEffect(() => {
     if (selectedDeputy && !selectedDeputyManagers.some((deputy) => deputy.id === selectedDeputy)) {
@@ -130,7 +141,7 @@ export function AppShell({
 
   useEffect(() => {
     setChartZoom(1)
-  }, [viewMode, selectedDirector, selectedOps, selectedDeputy, selectedCrewManager])
+  }, [viewMode, selectedDirector, selectedManagementPosition, selectedOps, selectedDeputy, selectedCrewManager])
 
   const confirmDiscardChanges = () => {
     if (!hasUnsavedChanges) return true
@@ -279,6 +290,7 @@ export function AppShell({
                   Select Crew Director
                   <select value={selectedDirector} onChange={(e) => {
                     setSelectedDirector(e.target.value)
+                    setSelectedManagementPosition('')
                     setSelectedOps('')
                     setSelectedDeputy('')
                     setSelectedCrewManager('')
@@ -287,6 +299,22 @@ export function AppShell({
                     {data.crewDirectors.map((director) => (
                       <option key={director.id} value={director.id}>
                         {director.person.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inline-select">
+                  Select Head / Management Level
+                  <select value={selectedManagementPosition} onChange={(e) => {
+                    setSelectedManagementPosition(e.target.value)
+                    setSelectedOps('')
+                    setSelectedDeputy('')
+                    setSelectedCrewManager('')
+                  }} disabled={!selectedDirector || !managementPositionsForDirector.length}>
+                    <option value="">{managementPositionsForDirector.length ? 'All management levels' : 'No management layer configured'}</option>
+                    {managementPositionsForDirector.map((position) => (
+                      <option key={position.id} value={position.id}>
+                        {position.levelName} — {position.person.name}
                       </option>
                     ))}
                   </select>
@@ -382,7 +410,7 @@ export function AppShell({
               </Suspense>
             ) : <AccessDeniedPage />
           ) : viewMode === 'vessels' ? (
-            <VesselMasterTable canEdit={canEdit} />
+            <VesselMasterTable canEdit={canEdit} canExport={allowExport} />
           ) : (
             <div ref={canvasStageRef} className={`canvas-stage ${readOnly ? 'canvas-stage-readonly' : ''}`}>
               <div className="presentation-viewport" style={{ zoom: chartZoom }}>
@@ -391,7 +419,7 @@ export function AppShell({
                 {viewMode === 'overview' ? (
                   <OrgChartView selectedDirectorId={selectedDirector} canEdit={canEdit} />
                 ) : (
-                  <OperationsAllocationView crewDirectorId={selectedDirector} operationsManagerId={selectedOps} deputyManagerId={selectedDeputy} crewManagerId={selectedCrewManager} canEdit={canEdit} />
+                  <OperationsAllocationView crewDirectorId={selectedDirector} managementPositionId={selectedManagementPosition} operationsManagerId={selectedOps} deputyManagerId={selectedDeputy} crewManagerId={selectedCrewManager} canEdit={canEdit} />
                 )}
                 </ChartErrorBoundary>
               </div>

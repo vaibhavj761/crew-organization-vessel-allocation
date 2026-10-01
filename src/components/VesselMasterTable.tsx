@@ -1,24 +1,34 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { Plus, Search, Trash2 } from 'lucide-react'
+import { FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useChart } from '../state/ChartContext'
 import type { Vessel, VesselFilters } from '../types'
-import { getAllCrewManagers, getCrewManagerReportingContext, getVesselPlacement } from '../utils/operationsAllocation'
+import { getAllCrewManagers, getCrewManagerReportingContext, getManagementChainForOperationsManager, getVesselPlacement } from '../utils/operationsAllocation'
+import { downloadVesselMasterCsv } from '../utils/exportVesselsCsv'
 import { validateVesselMasterFields } from '../utils/vesselValidation'
 import { VesselCreateDialog } from './VesselCreateDialog'
 import { VesselAssignmentFields } from './VesselAssignmentFields'
 
 
-export function filterVessels(vessels: Vessel[], filters: VesselFilters, operationsManagers: { id: string; crewManagerIds: string[] }[]) {
-  const crewManagerIds = filters.operationsManagerId
-    ? new Set(operationsManagers.find((item) => item.id === filters.operationsManagerId)?.crewManagerIds)
+interface OperationsFilterContext { id: string; crewManagerIds: string[]; managementPositionIds?: string[] }
+
+export function filterVessels(vessels: Vessel[], filters: VesselFilters, operationsManagers: OperationsFilterContext[]) {
+  const matchingOperations = operationsManagers.filter((item) => !filters.managementPositionId || item.managementPositionIds?.includes(filters.managementPositionId))
+  const selectedOperations = filters.operationsManagerId
+    ? matchingOperations.filter((item) => item.id === filters.operationsManagerId)
+    : matchingOperations
+  const operationsManagerIds = filters.managementPositionId || filters.operationsManagerId
+    ? new Set(selectedOperations.map((item) => item.id))
+    : null
+  const crewManagerIds = operationsManagerIds
+    ? new Set(selectedOperations.flatMap((item) => item.crewManagerIds))
     : null
   const query = filters.search.toLowerCase()
   return vessels.filter((vessel) => {
     const matchesQuery = !query || [vessel.name, vessel.ownerName, vessel.ownerPool, vessel.vesselDoc, vessel.vesselManager].some((value) => value.toLowerCase().includes(query))
     return matchesQuery
       && (!crewManagerIds || (vessel.operationsManagerId
-        ? vessel.operationsManagerId === filters.operationsManagerId
+        ? operationsManagerIds?.has(vessel.operationsManagerId)
         : crewManagerIds.has(vessel.crewManagerId)))
       && (!filters.crewManagerId || vessel.crewManagerId === filters.crewManagerId)
       && (!filters.vesselStatus || vessel.vesselStatus === filters.vesselStatus)
@@ -26,22 +36,28 @@ export function filterVessels(vessels: Vessel[], filters: VesselFilters, operati
   })
 }
 
-export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
+export function VesselMasterTable({ canEdit = true, canExport = true }: { canEdit?: boolean; canExport?: boolean }) {
   const { data, loadState } = useChart()
-  const [filters, setFilters] = useState<VesselFilters>({ search: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })
+  const [filters, setFilters] = useState<VesselFilters>({ search: '', managementPositionId: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })
   const [editing, setEditing] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const crewManagers = getAllCrewManagers(data)
   const operationsManagers = data.operationsManagers.map((op) => ({
     id: op.id,
+    managementPositionIds: getManagementChainForOperationsManager(data, op).map((position) => position.id),
     // A shared Crew Manager may report through several branches, but their
     // vessels belong to exactly one allocation-owning (primary) placement.
     crewManagerIds: op.deputyManagers.flatMap((deputy) => deputy.crewManagers
       .filter((crewManager) => crewManager.isPrimaryReportingLine !== false)
       .map((crewManager) => crewManager.id)),
   }))
-  const rows = useMemo(() => filterVessels(data.vessels, filters, operationsManagers), [data.vessels, filters])
+  const rows = useMemo(() => filterVessels(data.vessels, filters, operationsManagers), [data, filters])
+  const managementPositions = data.crewDirectors.flatMap((director) => director.managementPositions || [])
+  const visibleOperationsManagers = data.operationsManagers.filter((op) => {
+    if (!filters.managementPositionId) return true
+    return getManagementChainForOperationsManager(data, op).some((position) => position.id === filters.managementPositionId)
+  })
 
   return (
     <div className="vessel-master">
@@ -50,7 +66,10 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
           <h2>Vessel Master List</h2>
           <p>{rows.length} of {data.vessels.length} vessels</p>
         </div>
-        {canEdit ? <button type="button" className="button" onClick={() => { setError(''); setCreating(true) }} disabled={loadState !== 'ready'}><Plus size={14} /> Add vessel</button> : null}
+        <div className="master-actions">
+          {canExport ? <button type="button" className="button secondary" onClick={() => downloadVesselMasterCsv(data, rows)} disabled={loadState !== 'ready' || !rows.length} title="Download the current filtered vessel list for Excel"><FileSpreadsheet size={14} /> Export Excel</button> : null}
+          {canEdit ? <button type="button" className="button" onClick={() => { setError(''); setCreating(true) }} disabled={loadState !== 'ready'}><Plus size={14} /> Add vessel</button> : null}
+        </div>
       </div>
       {canEdit ? <p className="helper-copy">Required fields: Vessel name, Vessel type, Assignment.</p> : null}
 
@@ -59,13 +78,21 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
           <Search size={14} />
           <input placeholder="Search vessel, owner, pool, DOC or manager" value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} />
         </label>
+        <select aria-label="Filter by Head or management level" value={filters.managementPositionId} onChange={(e) => setFilters({ ...filters, managementPositionId: e.target.value, operationsManagerId: '', crewManagerId: '' })}>
+          <option value="">All Heads / Management Levels</option>
+          {managementPositions.map((position) => <option key={position.id} value={position.id}>{position.levelName} — {position.person.name}</option>)}
+        </select>
         <select value={filters.operationsManagerId} onChange={(e) => setFilters({ ...filters, operationsManagerId: e.target.value, crewManagerId: '' })}>
           <option value="">All Operations Managers</option>
-          {data.operationsManagers.map((op) => <option key={op.id} value={op.id}>{op.person.name}</option>)}
+          {visibleOperationsManagers.map((op) => <option key={op.id} value={op.id}>{op.person.name}</option>)}
         </select>
         <select value={filters.crewManagerId} onChange={(e) => setFilters({ ...filters, crewManagerId: e.target.value })}>
           <option value="">All Crew Managers</option>
-          {crewManagers.filter((cm) => !filters.operationsManagerId || operationsManagers.find((item) => item.id === filters.operationsManagerId)?.crewManagerIds.includes(cm.id)).map((cm) => (
+          {crewManagers.filter((cm) => {
+            if (filters.operationsManagerId) return operationsManagers.find((item) => item.id === filters.operationsManagerId)?.crewManagerIds.includes(cm.id)
+            if (filters.managementPositionId) return visibleOperationsManagers.some((op) => operationsManagers.find((item) => item.id === op.id)?.crewManagerIds.includes(cm.id))
+            return true
+          }).map((cm) => (
             <option key={cm.id} value={cm.id}>{cm.person.name}{getCrewManagerReportingContext(data, cm.id) ? ` — ${getCrewManagerReportingContext(data, cm.id)}` : ''}</option>
           ))}
         </select>
@@ -84,7 +111,7 @@ export function VesselMasterTable({ canEdit = true }: { canEdit?: boolean }) {
 
       <div className="filter-summary" aria-live="polite">
         <span>{rows.length} matching vessel{rows.length === 1 ? '' : 's'}</span>
-        {(filters.search || filters.operationsManagerId || filters.crewManagerId || filters.vesselStatus || filters.managementType) ? <button type="button" className="button ghost" onClick={() => setFilters({ search: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })}>Clear filters</button> : null}
+        {(filters.search || filters.managementPositionId || filters.operationsManagerId || filters.crewManagerId || filters.vesselStatus || filters.managementType) ? <button type="button" className="button ghost" onClick={() => setFilters({ search: '', managementPositionId: '', operationsManagerId: '', crewManagerId: '', vesselStatus: '', managementType: '' })}>Clear filters</button> : null}
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}

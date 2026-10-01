@@ -1,4 +1,4 @@
-import type { ChartData, CrewManagerNode, DeputyManagerNode, OperationsManagerNode, Vessel } from '../types'
+import type { ChartData, CrewManagerNode, DeputyManagerNode, ManagementHierarchyPositionNode, OperationsManagerNode, Vessel } from '../types'
 
 export interface CrewManagerPlacement {
   crewManager: CrewManagerNode
@@ -14,6 +14,48 @@ export function getVesselColumnCount(count: number) {
 
 export function getOperationsManagersForDirector(data: ChartData, directorId: string) {
   return data.operationsManagers.filter((item) => item.crewDirectorId === directorId)
+}
+
+export function getManagementPositionDescendantIds(positions: ManagementHierarchyPositionNode[], positionId: string) {
+  const children = new Map<string, string[]>()
+  positions.forEach((position) => {
+    const siblings = children.get(position.parentPositionId) || []
+    siblings.push(position.id)
+    children.set(position.parentPositionId, siblings)
+  })
+  const ids = new Set<string>()
+  const pending = [positionId]
+  while (pending.length) {
+    const id = pending.shift()!
+    if (ids.has(id)) continue
+    ids.add(id)
+    pending.push(...(children.get(id) || []))
+  }
+  return ids
+}
+
+export function getOperationsManagersForManagementPosition(data: ChartData, directorId: string, positionId = '') {
+  const operationsManagers = getOperationsManagersForDirector(data, directorId)
+  if (!positionId) return operationsManagers
+  const director = data.crewDirectors.find((item) => item.id === directorId)
+  const positionIds = getManagementPositionDescendantIds(director?.managementPositions || [], positionId)
+  return operationsManagers.filter((item) => Boolean(item.managementHierarchyPositionId && positionIds.has(item.managementHierarchyPositionId)))
+}
+
+export function getManagementChainForOperationsManager(data: ChartData, operationsManager?: OperationsManagerNode) {
+  if (!operationsManager?.managementHierarchyPositionId) return [] as ManagementHierarchyPositionNode[]
+  const director = data.crewDirectors.find((item) => item.id === operationsManager.crewDirectorId)
+  const positions = director?.managementPositions || []
+  const byId = new Map(positions.map((position) => [position.id, position]))
+  const chain: ManagementHierarchyPositionNode[] = []
+  const visited = new Set<string>()
+  let cursor = byId.get(operationsManager.managementHierarchyPositionId)
+  while (cursor && !visited.has(cursor.id)) {
+    chain.push(cursor)
+    visited.add(cursor.id)
+    cursor = cursor.parentPositionId ? byId.get(cursor.parentPositionId) : undefined
+  }
+  return chain.reverse()
 }
 
 export function getCrewManagersForOperationsManager(operationsManager?: OperationsManagerNode, crewManagerId = '') {

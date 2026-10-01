@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CrewManagerNode, Vessel } from '../types'
 import { useChart } from '../state/ChartContext'
 import { getCrewManagerLayoutMode } from '../utils/chartLayout'
-import { getDeputyManagersForOperationsManager, vesselBelongsToCrewManagerPlacement } from '../utils/operationsAllocation'
+import { getDeputyManagersForOperationsManager, getManagementChainForOperationsManager, getOperationsManagersForManagementPosition, vesselBelongsToCrewManagerPlacement } from '../utils/operationsAllocation'
 import { ChartHeader } from './ChartHeader'
 import { PersonCard } from './PersonCard'
 import { TeamCard } from './TeamCard'
@@ -11,12 +11,14 @@ import { ConfirmDialog } from './ConfirmDialog'
 
 export function OperationsAllocationView({
   crewDirectorId,
+  managementPositionId = '',
   operationsManagerId,
   deputyManagerId,
   crewManagerId,
   canEdit = false,
 }: {
   crewDirectorId: string
+  managementPositionId?: string
   operationsManagerId: string
   deputyManagerId: string
   crewManagerId: string
@@ -35,13 +37,17 @@ export function OperationsAllocationView({
   )
 
   const operationsManagers = useMemo(
-    () => data.operationsManagers.filter((item) => item.crewDirectorId === crewDirectorId),
-    [crewDirectorId, data.operationsManagers],
+    () => getOperationsManagersForManagementPosition(data, crewDirectorId, managementPositionId),
+    [crewDirectorId, data, managementPositionId],
   )
 
   const operationsManager = useMemo(
     () => operationsManagers.find((item) => item.id === operationsManagerId) || (!operationsManagerId ? operationsManagers[0] : undefined),
     [operationsManagerId, operationsManagers],
+  )
+  const managementChain = useMemo(
+    () => getManagementChainForOperationsManager(data, operationsManager),
+    [data, operationsManager],
   )
 
   const visibleDeputies = useMemo(
@@ -100,6 +106,10 @@ export function OperationsAllocationView({
         <ChartHeader title="Operations & Vessel Allocation" subtitle={`Crew Director: ${director?.person.name || 'Not selected'}`} />
         <div className="leadership-stack operations-focus-stack">
           {director ? <PersonCard person={director.person} level="head" /> : null}
+          {director?.managementPositions?.map((position) => <div className="management-focus-node" key={position.id}>
+            <div className="connector leadership-connector" />
+            <PersonCard person={position.person} level="operations" levelLabel={position.levelName} />
+          </div>)}
         </div>
         <div className="chart-empty-state">
           <strong>No Crew Operations Managers found under this Crew Director.</strong>
@@ -140,12 +150,17 @@ export function OperationsAllocationView({
 
       <div className="leadership-stack operations-focus-stack">
         {director ? <PersonCard person={director.person} level="head" /> : null}
+        {managementChain.map((position) => <div className="management-focus-node" key={position.id}>
+          <div className="connector leadership-connector" />
+          <PersonCard person={position.person} level="operations" levelLabel={position.levelName} />
+        </div>)}
         <div className="connector leadership-connector" />
         <PersonCard person={operationsManager.person} level="operations" />
       </div>
 
       <div className="operations-focus-summary">
         <span><strong>Crew Director</strong>{director?.person.name || 'Not selected'}</span>
+        <span><strong>Head / Management Path</strong>{managementChain.length ? managementChain.map((position) => `${position.person.name} · ${position.levelName}`).join(' → ') : 'Direct reporting line'}</span>
         <span><strong>Crew Operations Manager</strong>{operationsManager.person.name}</span>
         <span><strong>Allocation</strong>{visibleDeputies.length} deputies · {visibleCrewManagers.length} crew managers · {visibleVesselCount} vessels</span>
       </div>

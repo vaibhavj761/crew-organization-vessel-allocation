@@ -1,8 +1,8 @@
 import { Mail, Pencil, Phone } from 'lucide-react'
 import type { Person } from '../types'
 
-export function PersonCard({ person, compact = false, level = 'standard', onEdit }: { person: Person; eyebrow?: string; compact?: boolean; level?: 'head' | 'operations' | 'standard'; onEdit?: () => void }) {
-  const levelLabel = level === 'head' ? 'Crew Director' : level === 'operations' ? 'Crew Operations Manager' : 'Team member'
+export function PersonCard({ person, compact = false, level = 'standard', levelLabel: customLevelLabel, onEdit }: { person: Person; eyebrow?: string; compact?: boolean; level?: 'head' | 'operations' | 'standard'; levelLabel?: string; onEdit?: () => void }) {
+  const levelLabel = customLevelLabel || (level === 'head' ? 'Crew Director' : level === 'operations' ? 'Crew Operations Manager' : 'Team member')
   return (
     <article className={`person-card ${compact ? 'compact' : ''} level-${level}`}>
       {onEdit ? <button type="button" className="chart-inline-edit" onClick={onEdit} aria-label={`Edit ${person.name}`} title="Edit name and designation"><Pencil size={13} /></button> : null}

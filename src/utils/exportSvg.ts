@@ -1,7 +1,7 @@
 import { APP_NAME } from '../constants/app'
 import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, ManagementHierarchyPositionNode, OperationsManagerNode, ViewMode } from '../types'
 import { choosePresentationColumns, EXPORT_HEIGHT, EXPORT_WIDTH, fitToSlide, getPresentationDensity, type PresentationDensity } from './exportLayout'
-import { vesselBelongsToCrewManagerPlacement } from './operationsAllocation'
+import { getManagementChainForOperationsManager, vesselBelongsToCrewManagerPlacement } from './operationsAllocation'
 
 export type ExportTarget =
   | { kind: 'full' }
@@ -289,6 +289,9 @@ function renderStructure(data: ChartData, directors: CrewDirectorNode[]) {
   } else {
     const directorWidth = Math.min(430, (CONTENT_WIDTH - Math.max(0, directors.length - 1) * 12) / directors.length)
     const directorStart = (CONTENT_WIDTH - (directors.length * directorWidth + Math.max(0, directors.length - 1) * 12)) / 2
+    if (directors.length === 1 && hierarchyRows.length) {
+      body += `<line x1="${CONTENT_WIDTH / 2}" y1="64" x2="${CONTENT_WIDTH / 2}" y2="${directorBandHeight}" stroke="#9bb2c0" stroke-width="2"/>`
+    }
     directors.forEach((director, index) => {
       body += identityCard(directorStart + index * (directorWidth + 12), 0, directorWidth, director.person.name, director.person.designation, 'director', density)
     })
@@ -377,9 +380,28 @@ function renderAllocation(data: ChartData, director: CrewDirectorNode | null, op
   let output = header(data, `${titleName} · Vessel Allocation`, 'Complete team allocation · all assigned vessel names included', `${teams.length} crew managers · ${vesselCount} vessels`)
   output += `<g data-export-root="complete-chart" data-density="${density}" transform="translate(${originX} ${CONTENT_TOP}) scale(${scale})">`
   const leader = director || directorScope
-  if (leader) output += identityCard(0, 0, 330, leader.person.name, leader.person.designation, 'director', density)
-  if (operationsManager) output += identityCard(348, 0, 390, operationsManager.person.name, operationsManager.person.designation, 'operations', density)
-  const leadershipX = operationsManager ? 758 : 348
+  const hierarchyPositions = operationsManager
+    ? getManagementChainForOperationsManager(data, operationsManager)
+    : [...(directorScope?.managementPositions || [])].sort((left, right) => left.sortOrder - right.sortOrder)
+  const leaderCount = Number(Boolean(leader)) + hierarchyPositions.length + Number(Boolean(operationsManager))
+  const summaryWidth = 310
+  const leaderGap = 12
+  const leadersWidth = CONTENT_WIDTH - summaryWidth - leaderGap
+  const leaderWidth = leaderCount ? Math.max(150, Math.min(330, (leadersWidth - Math.max(0, leaderCount - 1) * leaderGap) / leaderCount)) : 0
+  let leaderX = 0
+  if (leaderCount > 1) {
+    output += `<line x1="${leaderWidth / 2}" y1="32" x2="${leadersWidth - leaderWidth / 2}" y2="32" stroke="#9bb2c0" stroke-width="2"/>`
+  }
+  if (leader) {
+    output += identityCard(leaderX, 0, leaderWidth, leader.person.name, leader.person.designation, 'director', density)
+    leaderX += leaderWidth + leaderGap
+  }
+  hierarchyPositions.forEach((position) => {
+    output += managementCard(leaderX, 3, leaderWidth, position)
+    leaderX += leaderWidth + leaderGap
+  })
+  if (operationsManager) output += identityCard(leaderX, 0, leaderWidth, operationsManager.person.name, operationsManager.person.designation, 'operations', density)
+  const leadershipX = CONTENT_WIDTH - summaryWidth
   output += `<rect x="${leadershipX}" y="0" width="${CONTENT_WIDTH - leadershipX}" height="${density === 'compact' || density === 'dense' ? 64 : 76}" rx="10" fill="#e8f0f5" stroke="#cfdae2"/>`
   output += text(leadershipX + 18, 24, 'ALLOCATION SCOPE', 8, 800, '#56758a', 'start', 'letter-spacing=".7"')
   output += text(leadershipX + 18, 48, `${metrics.deputyManagers} deputies · ${teams.length} crew managers · ${vesselCount} vessels`, 14, 800, '#17344c')

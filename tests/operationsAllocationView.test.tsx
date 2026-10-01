@@ -71,6 +71,23 @@ function makeChartData(): ChartData {
       phone: '',
       notes: '',
     },
+    managementPositions: [{
+      id: 'head-cm-position',
+      crewDirectorId: 'director-amit',
+      parentPositionId: '',
+      levelId: 'head-cm-level',
+      levelName: 'Head of CM, Asia',
+      sortOrder: 1,
+      person: {
+        id: 'person-sudheer',
+        name: 'Sudheer Chikala',
+        designation: 'Head of CM, Asia',
+        workflowRole: 'HIERARCHY_MANAGER' as const,
+        email: '',
+        phone: '',
+        notes: '',
+      },
+    }],
   }
 
   return {
@@ -83,6 +100,7 @@ function makeChartData(): ChartData {
       {
         id: 'ops-sidharth',
         crewDirectorId: director.id,
+        managementHierarchyPositionId: 'head-cm-position',
         sortOrder: 1,
         person: {
           id: 'person-sidharth',
@@ -104,6 +122,7 @@ function makeChartData(): ChartData {
       {
         id: 'ops-namrata',
         crewDirectorId: director.id,
+        managementHierarchyPositionId: 'head-cm-position',
         sortOrder: 2,
         person: {
           id: 'person-namrata',
@@ -137,6 +156,8 @@ describe('OperationsAllocationView blank-canvas protection', () => {
 
     expect(container.querySelector('.chart-view--compact-top.operations-allocation-view')).toBeTruthy()
     expect(screen.getAllByText('Sidharth Bajaj').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Sudheer Chikala').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Head of CM, Asia').length).toBeGreaterThan(0)
     expect(screen.getByText('Crew Manager One')).toBeInTheDocument()
     expect(screen.getByText('Crew Manager Two')).toBeInTheDocument()
     expect(screen.getByText('Crew Manager Three')).toBeInTheDocument()

@@ -77,7 +77,7 @@ export interface SafeUser {
 }
 
 export interface VesselFilters {
-  search: string; operationsManagerId: string; crewManagerId: string
+  search: string; managementPositionId?: string; operationsManagerId: string; crewManagerId: string
   vesselStatus: '' | VesselStatus; managementType: '' | ManagementType
 }
 

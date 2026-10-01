@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sampleData } from '../src/data/sampleData'
-import { getAllCrewManagers, getCrewManagerReportingContext, getCrewManagersForOperationsManager, getOperationsManagersForDirector, getVesselColumnCount } from '../src/utils/operationsAllocation'
+import { getAllCrewManagers, getCrewManagerReportingContext, getCrewManagersForOperationsManager, getManagementChainForOperationsManager, getOperationsManagersForDirector, getOperationsManagersForManagementPosition, getVesselColumnCount } from '../src/utils/operationsAllocation'
 
 describe('operations allocation helpers', () => {
   it('filters operations managers by crew director', () => {
@@ -9,6 +9,19 @@ describe('operations allocation helpers', () => {
 
     expect(operationsManagers).toHaveLength(1)
     expect(operationsManagers[0].person.name).toBe('Marcus Pereira')
+  })
+
+  it('filters through nested management layers and preserves the full reporting chain', () => {
+    const data = structuredClone(sampleData)
+    const director = data.crewDirectors[0]
+    director.managementPositions = [
+      { id: 'head', crewDirectorId: director.id, parentPositionId: '', levelId: 'level-head', levelName: 'Head of CM', sortOrder: 1, person: { id: 'head-person', name: 'Sudheer Chikala', designation: 'Head of CM', workflowRole: 'HIERARCHY_MANAGER', email: '', phone: '', notes: '' } },
+      { id: 'regional', crewDirectorId: director.id, parentPositionId: 'head', levelId: 'level-region', levelName: 'Regional Lead', sortOrder: 1, person: { id: 'regional-person', name: 'Regional Lead', designation: 'Regional Lead', workflowRole: 'HIERARCHY_MANAGER', email: '', phone: '', notes: '' } },
+    ]
+    data.operationsManagers[0].managementHierarchyPositionId = 'regional'
+
+    expect(getOperationsManagersForManagementPosition(data, director.id, 'head')).toHaveLength(1)
+    expect(getManagementChainForOperationsManager(data, data.operationsManagers[0]).map((item) => item.id)).toEqual(['head', 'regional'])
   })
 
   it('returns all crew managers by default and preserves focused manager filtering', () => {

@@ -13,6 +13,9 @@ describe('SVG export', () => {
     const svg = generateExportSvg(data, { kind: 'full' })
     expect(svg).toContain('HEAD OF CREW MANAGEMENT')
     expect(svg).toContain('Executive Head')
+    const allocationSvg = generateExportSvg(data, { kind: 'operations', operationsManagerId: data.operationsManagers[0].id })
+    expect(allocationSvg).toContain('HEAD OF CREW MANAGEMENT')
+    expect(allocationSvg).toContain('Executive Head')
   })
 
   it('exports full overview as a native 16:9 SVG', () => {
