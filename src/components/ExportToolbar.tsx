@@ -50,6 +50,7 @@ export function ExportToolbar({
   }, [selectedCrewDirectorId, selectedCrewManagerId, selectedOperationsManagerId, viewMode])
 
   const fullTarget: ExportTarget = { kind: 'full' }
+  const completeTarget: ExportTarget = { kind: 'complete' }
   const directorTarget: ExportTarget = selectedCrewDirectorId
     ? { kind: 'director', directorId: selectedCrewDirectorId }
     : { kind: 'full' }
@@ -103,6 +104,22 @@ export function ExportToolbar({
 
           {busy ? <p className="export-progress" role="status">Preparing the complete presentation canvas…</p> : null}
           {exportError ? <p className="export-error" role="alert">{exportError}</p> : null}
+
+          <button className="export-featured-option" onClick={() => void run(completeTarget, 'png')} disabled={busy}>
+            <FileImage size={17} />
+            <span>
+              <strong>Complete one-page PNG</strong>
+              <small>Full hierarchy + every vessel name · PowerPoint-ready</small>
+            </span>
+          </button>
+
+          <button className="export-featured-option" onClick={() => void run(completeTarget, 'svg')} disabled={busy}>
+            <FileType2 size={17} />
+            <span>
+              <strong>Complete one-page SVG</strong>
+              <small>Editable vector for PowerPoint</small>
+            </span>
+          </button>
 
           <button onClick={() => void run(currentTarget, 'svg')} disabled={busy}>
             <FileType2 size={17} />

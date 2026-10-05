@@ -3,6 +3,53 @@ import { sampleData } from '../src/data/sampleData'
 import { generateExportSvg } from '../src/utils/exportSvg'
 
 describe('SVG export', () => {
+  it('fits the complete hierarchy and every vessel name on one 16:9 slide', () => {
+    const data = structuredClone(sampleData)
+    data.crewDirectors[0].managementPositions = [{
+      id: 'head-cm', crewDirectorId: data.crewDirectors[0].id, parentPositionId: '', levelId: 'head-cm-level', levelName: 'Head of CM, Asia', sortOrder: 1,
+      person: { id: 'head-cm-person', name: 'Sudheer Chikala', designation: 'Head of CM, Asia', workflowRole: 'HIERARCHY_MANAGER', email: '', phone: '', notes: '' },
+    }]
+    data.operationsManagers[0].managementHierarchyPositionId = 'head-cm'
+    const managers = Array.from({ length: 15 }, (_, index) => ({
+      ...structuredClone(data.operationsManagers[index % 2].deputyManagers[0].crewManagers[0]),
+      id: `complete-manager-${index}`,
+      reportingLineId: `complete-line-${index}`,
+      person: { ...structuredClone(data.operationsManagers[index % 2].deputyManagers[0].crewManagers[0].person), id: `complete-person-${index}`, name: `Complete Crew Manager ${index + 1}` },
+      vesselIds: [],
+    }))
+    data.operationsManagers[0].deputyManagers[0].crewManagers = managers.slice(0, 8)
+    data.operationsManagers[1].deputyManagers[0].crewManagers = managers.slice(8)
+    data.vessels = Array.from({ length: 150 }, (_, index) => {
+      const manager = managers[index % managers.length]
+      const operationsManager = index % managers.length < 8 ? data.operationsManagers[0] : data.operationsManagers[1]
+      const deputy = operationsManager.deputyManagers[0]
+      return {
+        ...structuredClone(sampleData.vessels[0]),
+        id: `complete-vessel-${index}`,
+        name: `Complete Vessel Name ${index + 1}`,
+        crewManagerId: manager.id,
+        crewManagerReportingLineId: manager.reportingLineId,
+        deputyManagerId: deputy.id,
+        operationsManagerId: operationsManager.id,
+        sortOrder: index + 1,
+      }
+    })
+
+    const svg = generateExportSvg(data, { kind: 'complete' })
+
+    expect(svg).toContain('viewBox="0 0 1920 1080"')
+    expect(svg).toContain('data-export-root="complete-one-page"')
+    expect(svg).toContain('Sudheer Chikala')
+    expect(svg).toContain('Consolidated Vessel Allocation')
+    expect(svg).toContain('#11675f')
+    expect(svg).toContain('#51358c')
+    expect(svg).toContain('DEPUTY ·')
+    managers.forEach((manager) => expect(svg).toContain(manager.person.name))
+    data.vessels.forEach((vessel) => expect(svg).toContain(vessel.name))
+    expect(svg).not.toContain('more vessels')
+    expect(svg).not.toContain('NaN')
+  })
+
   it('includes configurable management layers in the organization export', () => {
     const data = structuredClone(sampleData)
     data.crewDirectors[0].managementPositions = [{

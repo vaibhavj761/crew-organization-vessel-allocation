@@ -1,10 +1,11 @@
 import { APP_NAME } from '../constants/app'
 import type { ChartData, CrewDirectorNode, CrewManagerNode, DeputyManagerNode, ManagementHierarchyPositionNode, OperationsManagerNode, ViewMode } from '../types'
 import { choosePresentationColumns, EXPORT_HEIGHT, EXPORT_WIDTH, fitToSlide, getPresentationDensity, type PresentationDensity } from './exportLayout'
-import { getManagementChainForOperationsManager, vesselBelongsToCrewManagerPlacement } from './operationsAllocation'
+import { getManagementChainForOperationsManager, getVesselPlacement, vesselBelongsToCrewManagerPlacement } from './operationsAllocation'
 
 export type ExportTarget =
   | { kind: 'full' }
+  | { kind: 'complete'; directorId?: string }
   | { kind: 'director'; directorId: string }
   | { kind: 'director-allocation'; directorId: string }
   | { kind: 'operations'; operationsManagerId: string }
@@ -55,6 +56,13 @@ function wrappedText(x: number, y: number, value: string, maxCharacters: number,
   return `<text x="${x}" y="${y}" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="${size}" font-weight="${weight}" fill="${color}" text-anchor="${anchor}">${words(value, maxCharacters, maxLines).map((line, index) => `<tspan x="${x}" dy="${index ? lineHeight : 0}">${escapeXml(line)}</tspan>`).join('')}</text>`
 }
 
+function fittedText(x: number, y: number, value: string, width: number, size: number, weight: number | string, color: string) {
+  const clean = value.trim() || 'Not specified'
+  const estimatedWidth = clean.length * size * .56
+  const fit = estimatedWidth > width ? `textLength="${Math.max(1, width)}" lengthAdjust="spacingAndGlyphs"` : ''
+  return text(x, y, clean, size, weight, color, 'start', fit)
+}
+
 function formatDate(value: string) {
   if (!value) return 'Current structure'
   return new Date(`${value}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -81,6 +89,7 @@ function vesselsForCrewManager(data: ChartData, crewManager: CrewManagerNode) {
 }
 
 function resolveDirector(data: ChartData, target: ExportTarget) {
+  if (target.kind === 'complete' && target.directorId) return data.crewDirectors.find((item) => item.id === target.directorId) || null
   if (target.kind === 'director' || target.kind === 'director-allocation') return data.crewDirectors.find((item) => item.id === target.directorId) || null
   if (target.kind === 'operations') {
     const operationsManager = data.operationsManagers.find((item) => item.id === target.operationsManagerId)
@@ -91,6 +100,225 @@ function resolveDirector(data: ChartData, target: ExportTarget) {
     return data.crewDirectors.find((item) => item.id === operationsManager?.crewDirectorId) || null
   }
   return null
+}
+
+interface CompletePalette {
+  strong: string
+  mid: string
+  pale: string
+  border: string
+  label: string
+}
+
+const COMPLETE_PALETTES: CompletePalette[] = [
+  { strong: '#11675f', mid: '#21867b', pale: '#edf8f6', border: '#a9d6d0', label: '#0e5a53' },
+  { strong: '#51358c', mid: '#684da3', pale: '#f3f0fa', border: '#cec3e4', label: '#49307e' },
+  { strong: '#174b69', mid: '#276b91', pale: '#edf5f9', border: '#b6d1df', label: '#174b69' },
+  { strong: '#8b3f13', mid: '#a75321', pale: '#fbf3ee', border: '#e1bea8', label: '#78370f' },
+  { strong: '#3f576d', mid: '#5c7488', pale: '#f1f5f7', border: '#c4d1da', label: '#344b60' },
+]
+
+function completeManagerCardHeight(vesselCount: number) {
+  return 42 + Math.max(1, Math.ceil(vesselCount / 2)) * 19
+}
+
+function completeDeputyHeight(data: ChartData, deputy: DeputyManagerNode) {
+  if (!deputy.crewManagers.length) return 66
+  const managerRows = rowsOf(deputy.crewManagers, 2)
+  return 37 + managerRows.reduce((sum, row) => sum + Math.max(...row.map((manager) => completeManagerCardHeight(vesselsForCrewManager(data, manager).length))), 0) + Math.max(0, managerRows.length - 1) * 8 + 10
+}
+
+function completeTeamNaturalHeight(data: ChartData, operationsManager: OperationsManagerNode) {
+  return 86 + operationsManager.deputyManagers.reduce((sum, deputy) => sum + completeDeputyHeight(data, deputy), 0) + Math.max(0, operationsManager.deputyManagers.length - 1) * 9 + 12
+}
+
+function completeManagerAllocationCard(data: ChartData, manager: CrewManagerNode, x: number, y: number, width: number, palette: CompletePalette) {
+  const vessels = vesselsForCrewManager(data, manager)
+  const height = completeManagerCardHeight(vessels.length)
+  const vesselGap = 4
+  const vesselWidth = (width - 16 - vesselGap) / 2
+  let output = `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="6" fill="#ffffff" stroke="${palette.border}"/>`
+  output += `<rect x="${x}" y="${y}" width="${width}" height="35" rx="6" fill="${palette.mid}"/>`
+  output += `<rect x="${x}" y="${y + 29}" width="${width}" height="6" fill="${palette.mid}"/>`
+  output += fittedText(x + 8, y + 16, manager.person.name || 'Unnamed Crew Manager', width - 52, 9.2, 850, '#ffffff')
+  output += fittedText(x + 8, y + 29, manager.person.designation || 'Crew Manager', width - 52, 6.8, 550, '#eef7fa')
+  output += `<rect x="${x + width - 34}" y="${y + 8}" width="26" height="17" rx="8.5" fill="#ffffff"/>`
+  output += text(x + width - 21, y + 20, `${vessels.length}`, 7.5, 850, palette.label, 'middle')
+  if (!vessels.length) {
+    output += text(x + width / 2, y + 53, 'No vessels assigned', 7.2, 550, '#8495a2', 'middle', 'font-style="italic"')
+    return output
+  }
+  vessels.forEach((vessel, index) => {
+    const column = index % 2
+    const row = Math.floor(index / 2)
+    const vesselX = x + 6 + column * (vesselWidth + vesselGap)
+    const vesselY = y + 39 + row * 19
+    output += `<rect x="${vesselX}" y="${vesselY}" width="${vesselWidth}" height="16" rx="3" fill="#f3f6f8" stroke="#d9e2e8"/>`
+    output += fittedText(vesselX + 5, vesselY + 11, vessel.name || 'Unnamed vessel', vesselWidth - 10, 6.6, 750, '#203b51')
+  })
+  return output
+}
+
+function completeDeputySection(data: ChartData, deputy: DeputyManagerNode, x: number, y: number, width: number, palette: CompletePalette) {
+  const height = completeDeputyHeight(data, deputy)
+  const vessels = deputy.crewManagers.reduce((sum, manager) => sum + vesselsForCrewManager(data, manager).length, 0)
+  const managerGap = 8
+  const managerWidth = (width - 16 - managerGap) / 2
+  let output = `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="7" fill="#ffffff" fill-opacity=".78" stroke="${palette.border}" stroke-dasharray="3 2"/>`
+  output += fittedText(x + 8, y + 17, `DEPUTY · ${deputy.person.name || 'Unnamed Deputy Manager'}`.toUpperCase(), width - 142, 7.5, 850, palette.label)
+  output += text(x + width - 8, y + 17, `${deputy.crewManagers.length} CM · ${vessels} VESSELS`, 7.2, 800, palette.label, 'end')
+  if (!deputy.crewManagers.length) {
+    output += text(x + width / 2, y + 48, 'No Crew Managers assigned', 8, 550, '#8093a1', 'middle', 'font-style="italic"')
+    return output
+  }
+  const managerRows = rowsOf(deputy.crewManagers, 2)
+  let managerY = y + 27
+  managerRows.forEach((row) => {
+    const rowHeight = Math.max(...row.map((manager) => completeManagerCardHeight(vesselsForCrewManager(data, manager).length)))
+    row.forEach((manager, column) => {
+      output += completeManagerAllocationCard(data, manager, x + 8 + column * (managerWidth + managerGap), managerY, managerWidth, palette)
+    })
+    managerY += rowHeight + 8
+  })
+  return output
+}
+
+function completeTeamColumn(data: ChartData, operationsManager: OperationsManagerNode, width: number, height: number, palette: CompletePalette) {
+  const vesselCount = operationsManager.deputyManagers.reduce((sum, deputy) => sum + deputy.crewManagers.reduce((inner, manager) => inner + vesselsForCrewManager(data, manager).length, 0), 0)
+  const managerCount = operationsManager.deputyManagers.reduce((sum, deputy) => sum + deputy.crewManagers.length, 0)
+  let output = `<rect width="${width}" height="${height}" rx="11" fill="${palette.pale}" stroke="${palette.border}"/>`
+  output += `<rect width="${width}" height="6" rx="3" fill="${palette.strong}"/>`
+  output += `<rect x="10" y="14" width="${width - 20}" height="65" rx="8" fill="${palette.strong}"/>`
+  output += text(22, 32, 'CREW OPERATIONS MANAGER', 7.2, 850, '#dcebef', 'start', 'letter-spacing=".65"')
+  output += fittedText(22, 52, operationsManager.person.name || 'Unnamed Operations Manager', width - 112, 12.5, 850, '#ffffff')
+  output += fittedText(22, 68, operationsManager.person.designation || 'Crew Operations Manager', width - 112, 7.2, 550, '#e8f1f4')
+  output += text(width - 22, 48, `${vesselCount}`, 17, 850, '#ffffff', 'end')
+  output += text(width - 22, 63, 'vessels', 7.2, 550, '#edf4f6', 'end')
+  output += text(width - 22, 74, `${operationsManager.deputyManagers.length} dep · ${managerCount} CM`, 6.8, 650, '#edf4f6', 'end')
+  let deputyY = 87
+  operationsManager.deputyManagers.forEach((deputy) => {
+    output += completeDeputySection(data, deputy, 10, deputyY, width - 20, palette)
+    deputyY += completeDeputyHeight(data, deputy) + 9
+  })
+  if (!operationsManager.deputyManagers.length) output += text(width / 2, 115, 'No Deputy Managers assigned', 9, 600, '#728896', 'middle')
+  return output
+}
+
+function renderCompleteOnePage(data: ChartData, directorId?: string) {
+  const directors = directorId ? data.crewDirectors.filter((director) => director.id === directorId) : data.crewDirectors
+  const visibleOperations = data.operationsManagers
+    .filter((operation) => directors.some((director) => director.id === operation.crewDirectorId))
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.person.name.localeCompare(right.person.name))
+  const hierarchyRows = managementRows(directors)
+  const deputies = visibleOperations.flatMap((operation) => operation.deputyManagers)
+  const managers = deputies.flatMap((deputy) => deputy.crewManagers)
+  const operationIds = new Set(visibleOperations.map((operation) => operation.id))
+  const scopedVessels = data.vessels.filter((vessel) => {
+    if (!directorId) return true
+    const placement = getVesselPlacement(data, vessel)
+    return placement ? operationIds.has(placement.operationsManager.id) : false
+  })
+  const unassignedVessels = scopedVessels.filter((vessel) => !getVesselPlacement(data, vessel))
+  const vesselCount = scopedVessels.length
+  const peopleCount = directors.length
+    + directors.reduce((sum, director) => sum + (director.managementPositions?.length || 0), 0)
+    + visibleOperations.length
+    + deputies.length
+    + managers.length
+  const title = `${data.organizationName || 'Crew Management'} · Consolidated Vessel Allocation`
+  const snapshot = formatDate(data.effectiveDate)
+  const managementTrail = hierarchyRows.flatMap(([, positions]) => positions.map((position) => position.levelName)).join(' › ')
+  const reportingTrail = ['Crew Director', managementTrail, 'Crew Operations Managers', 'Deputies', 'Crew Managers', 'Vessels'].filter(Boolean).join(' › ')
+  let output = [
+    `<rect width="${EXPORT_WIDTH}" height="${EXPORT_HEIGHT}" fill="#f5f7fa"/>`,
+    `<rect width="${EXPORT_WIDTH}" height="7" fill="#0b2447"/>`,
+    text(28, 34, (data.organizationName || APP_NAME).toUpperCase(), 10, 850, '#4f7ea0', 'start', 'letter-spacing="1.2"'),
+    fittedText(28, 66, title, 1210, 27, 850, '#0b2447'),
+    fittedText(28, 88, `Full reporting structure — ${reportingTrail} · Snapshot ${snapshot}`, 1290, 10.5, 500, '#667d8f'),
+    `<line x1="28" y1="101" x2="1892" y2="101" stroke="#d6e0e7"/>`,
+  ].join('')
+
+  const stats = [
+    [visibleOperations.length, 'CREW OPS MANAGERS'],
+    [deputies.length, 'DEPUTIES'],
+    [managers.length, 'CREW MANAGERS'],
+    [vesselCount, 'VESSELS'],
+  ] as const
+  const statWidth = 104
+  const statGap = 8
+  const statStart = EXPORT_WIDTH - 28 - stats.length * statWidth - (stats.length - 1) * statGap
+  stats.forEach(([value, label], index) => {
+    const x = statStart + index * (statWidth + statGap)
+    output += `<rect x="${x}" y="29" width="${statWidth}" height="55" rx="8" fill="#ffffff" stroke="#d5e0e7"/>`
+    output += text(x + statWidth / 2, 56, `${value}`, 19, 850, '#0b2447', 'middle')
+    output += text(x + statWidth / 2, 75, label, 6.8, 800, '#718697', 'middle', 'letter-spacing=".65"')
+  })
+
+  const leadershipEntries = [
+    ...directors.map((director) => ({ role: 'CREW DIRECTOR', name: director.person.name, designation: director.person.designation, director: true })),
+    ...hierarchyRows.flatMap(([, positions]) => positions.map((position) => ({ role: position.levelName, name: position.person.name, designation: position.person.designation, director: false }))),
+  ]
+  const leadershipY = 112
+  const leadershipGap = 46
+  const leadershipWidth = Math.min(242, (CONTENT_WIDTH - Math.max(0, leadershipEntries.length - 1) * leadershipGap) / Math.max(1, leadershipEntries.length))
+  const leadershipTotalWidth = leadershipEntries.length * leadershipWidth + Math.max(0, leadershipEntries.length - 1) * leadershipGap
+  const leadershipStart = (EXPORT_WIDTH - leadershipTotalWidth) / 2
+  leadershipEntries.forEach((entry, index) => {
+    const x = leadershipStart + index * (leadershipWidth + leadershipGap)
+    const fill = entry.director ? '#0b2447' : '#ffffff'
+    const stroke = entry.director ? '#0b2447' : '#72a0bf'
+    const mainColor = entry.director ? '#ffffff' : '#17344c'
+    const mutedColor = entry.director ? '#dce7ee' : '#5f7b8e'
+    output += `<rect x="${x}" y="${leadershipY}" width="${leadershipWidth}" height="50" rx="8" fill="${fill}" stroke="${stroke}"/>`
+    output += text(x + leadershipWidth / 2, leadershipY + 16, entry.role.toUpperCase(), 7.2, 850, entry.director ? '#bcd2df' : '#4e7d99', 'middle', 'letter-spacing=".75"')
+    output += fittedText(x + 18, leadershipY + 34, entry.name || 'Position vacant', leadershipWidth - 36, 12.5, 850, mainColor)
+    output += fittedText(x + 18, leadershipY + 46, entry.designation || entry.role, leadershipWidth - 36, 6.8, 550, mutedColor)
+    if (index) output += `<line x1="${x - leadershipGap}" y1="${leadershipY + 25}" x2="${x}" y2="${leadershipY + 25}" stroke="#7ea4bc" stroke-width="1.5"/>`
+  })
+
+  const operationsGap = 26
+  const operationsWidth = visibleOperations.length
+    ? (CONTENT_WIDTH - Math.max(0, visibleOperations.length - 1) * operationsGap) / visibleOperations.length
+    : CONTENT_WIDTH
+  const operationsTop = 190
+  const unassignedHeight = unassignedVessels.length ? 62 : 0
+  const operationsHeight = FOOTER_TOP - operationsTop - 12 - unassignedHeight
+  const maximumTeamHeight = Math.max(1, ...visibleOperations.map((operation) => completeTeamNaturalHeight(data, operation)))
+  const teamScale = Math.min(1, operationsHeight / maximumTeamHeight)
+  const naturalTeamWidth = operationsWidth / teamScale
+  const naturalTeamHeight = operationsHeight / teamScale
+  if (visibleOperations.length) {
+    const firstCenter = MARGIN_X + operationsWidth / 2
+    const lastCenter = MARGIN_X + (visibleOperations.length - 1) * (operationsWidth + operationsGap) + operationsWidth / 2
+    const reportingCenter = leadershipEntries.length ? leadershipStart + (leadershipEntries.length - 1) * (leadershipWidth + leadershipGap) + leadershipWidth / 2 : EXPORT_WIDTH / 2
+    output += `<path d="M ${reportingCenter} ${leadershipY + 50} V ${operationsTop - 9} M ${firstCenter} ${operationsTop - 9} H ${lastCenter}" fill="none" stroke="#7ea4bc" stroke-width="1.5"/>`
+    visibleOperations.forEach((operation, index) => {
+      const x = MARGIN_X + index * (operationsWidth + operationsGap)
+      const center = x + operationsWidth / 2
+      output += `<line x1="${center}" y1="${operationsTop - 9}" x2="${center}" y2="${operationsTop}" stroke="#7ea4bc" stroke-width="1.5"/>`
+      output += `<g transform="translate(${x} ${operationsTop}) scale(${teamScale})">${completeTeamColumn(data, operation, naturalTeamWidth, naturalTeamHeight, COMPLETE_PALETTES[index % COMPLETE_PALETTES.length])}</g>`
+    })
+  } else {
+    output += `<rect x="${MARGIN_X}" y="${operationsTop}" width="${CONTENT_WIDTH}" height="160" rx="10" fill="#ffffff" stroke="#d5e0e7"/>`
+    output += text(EXPORT_WIDTH / 2, operationsTop + 85, 'No Crew Operations Managers configured', 15, 700, '#607789', 'middle')
+  }
+
+  if (unassignedVessels.length) {
+    const panelY = FOOTER_TOP - unassignedHeight - 6
+    output += `<rect x="${MARGIN_X}" y="${panelY}" width="${CONTENT_WIDTH}" height="${unassignedHeight - 2}" rx="8" fill="#fff8eb" stroke="#e4c783"/>`
+    output += text(MARGIN_X + 14, panelY + 18, `UNASSIGNED VESSELS · ${unassignedVessels.length}`, 8, 850, '#775a16', 'start', 'letter-spacing=".65"')
+    const chipGap = 5
+    const chipWidth = Math.min(145, (CONTENT_WIDTH - 28 - Math.max(0, unassignedVessels.length - 1) * chipGap) / Math.max(1, unassignedVessels.length))
+    unassignedVessels.forEach((vessel, index) => {
+      const x = MARGIN_X + 14 + index * (chipWidth + chipGap)
+      output += `<rect x="${x}" y="${panelY + 27}" width="${chipWidth}" height="21" rx="4" fill="#ffffff" stroke="#ddc580"/>`
+      output += fittedText(x + 6, panelY + 41, vessel.name || 'Unnamed vessel', chipWidth - 12, 7, 750, '#5d4b1d')
+    })
+  }
+
+  output += `<g data-export-root="complete-one-page"></g>`
+  output += footer(data, `${data.organizationName || 'Crew organization'} · ${vesselCount} vessels · ${peopleCount} people`)
+  return output
 }
 
 function resolveOperationsManager(data: ChartData, target: ExportTarget) {
@@ -421,6 +649,9 @@ function renderAllocation(data: ChartData, director: CrewDirectorNode | null, op
 }
 
 export function generateExportSvg(data: ChartData, target: ExportTarget) {
+  if (target.kind === 'complete') {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${EXPORT_WIDTH}" height="${EXPORT_HEIGHT}" viewBox="0 0 ${EXPORT_WIDTH} ${EXPORT_HEIGHT}" role="img" aria-label="Complete Crew Organization and Vessel Allocation Chart"><style>*{animation:none!important;transition:none!important}</style>${renderCompleteOnePage(data, target.directorId)}</svg>`
+  }
   const director = resolveDirector(data, target)
   const operationsManager = resolveOperationsManager(data, target)
   const crewManager = target.kind === 'manager' ? allCrewManagers(data).find((item) => item.id === target.crewManagerId) || null : null

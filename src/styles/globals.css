@@ -279,6 +279,8 @@ button:disabled { cursor: not-allowed; opacity: .35; }
 .export-popover .export-warning { margin: 7px 0 2px; padding: 8px; border-radius: 5px; background: #fff7e6; border: 1px solid #f0d59b; color: #765315; font-size: 9px; line-height: 1.4; }
 .export-popover button { width: 100%; border: 0; background: white; display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 8px; border-radius: 5px; color: var(--steel-600); }
 .export-popover button:hover { background: #f1f5f7; }
+.export-popover button.export-featured-option { margin-top: 5px; border: 1px solid #bdd0dc; background: #eef5f8; }
+.export-popover button.export-featured-option:hover { border-color: #78a0b7; background: #e5f0f5; }
 .export-popover button span { display: flex; flex-direction: column; }
 .export-popover button strong { color: var(--navy-700); font-size: 10px; }
 .export-progress, .export-error { margin: 7px 4px 3px; padding: 8px 9px; border-radius: 6px; font-size: 10px; line-height: 1.4; }

@@ -40,6 +40,7 @@ function slug(value: string) {
 }
 
 export function getExportFilename(data: ChartData, target: ExportTarget, extension: 'png' | 'svg') {
+  if (target.kind === 'complete') return `crew-org-complete-one-page.${extension}`
   if (target.kind === 'full') return `crew-org-full-chart.${extension}`
   if (target.kind === 'director' || target.kind === 'director-allocation') {
     const director = data.crewDirectors.find((item) => item.id === target.directorId)

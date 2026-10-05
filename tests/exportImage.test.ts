@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sampleData } from '../src/data/sampleData'
-import { exportPng } from '../src/utils/exportImage'
+import { exportPng, getExportFilename } from '../src/utils/exportImage'
 
 describe('PNG browser export reliability', () => {
   afterEach(() => {
@@ -41,5 +41,10 @@ describe('PNG browser export reliability', () => {
     expect(loadedSources[1]).toMatch(/^data:image\/svg\+xml/)
     expect(document.documentElement.dataset.exportStatus).toBe('ready')
     expect(document.documentElement.dataset.exportFilename).toBe('crew-org-full-chart.png')
+  })
+
+  it('uses a presentation-ready filename for the complete one-page export', () => {
+    expect(getExportFilename(sampleData, { kind: 'complete' }, 'png')).toBe('crew-org-complete-one-page.png')
+    expect(getExportFilename(sampleData, { kind: 'complete' }, 'svg')).toBe('crew-org-complete-one-page.svg')
   })
 })
